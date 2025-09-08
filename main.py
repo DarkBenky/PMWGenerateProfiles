@@ -102,49 +102,56 @@ def creteProfileComputed():
     for period in periods:
         kinds = ["Quantitative", "Continuous"]
         for kind in kinds:
-            data = {
-                "Name": f"computed_{period}_{kind}",
-                "Period": {
-                    "Period": period,
-                    "Offset": "00:00:00",
-                    "TimeZone": "CET"
-                },
-                "Type": "Computed",
-                "DirectoryId": 1349193,
-                "Comment": "",
-                "Expression": f"sum(\\one, {kind[0:2]})",
-                "Kind": kind,
-                "Policy": "00000000-0000-0000-0000-000000000000"
-            }
-            
-            # Complete headers matching the working frontend request
-            headers = {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Encoding': 'gzip, deflate, br, zstd',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                'Origin': 'https://timeseries-dev',
-                'Referer': 'https://timeseries-dev/profile-manager/dockboard',
-                'Sec-Fetch-Dest': 'empty',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'same-origin',
-                'mshdo-language': 'en',
-                'x-xsrf-token': xsrf_token
-            }
-            
-            response = requests.post(
-                api_url, 
-                headers=headers, 
-                cookies=auth_cookies,
-                data=json.dumps(data), 
-                verify=False
-            )
-            print(f"Status: {response.status_code} for {period}_{kind}")
-            if response.status_code != 200:
-                print(f"Error response: {response.text}")
-            else:
-                print("Success!")
+            profilePeriods = ["PH", "PD", "PW", "PE", "PM", "PQ", "PY"]
+            for pP in profilePeriods:
+                functions = ["sum", "avg", "min", "max"]
+                for func in functions:
+                    data = {
+                        "Name": f"computed_{period}_{kind}_{pP}_{func}",
+                        "Period": {
+                            "Period": period,
+                            "Offset": "00:00:00",
+                            "TimeZone": "CET"
+                        },
+                        "Type": "Computed",
+                        "DirectoryId": 1349193,
+                        "Comment": "",
+                        "Expression": f"{func}(\\one, {pP})",
+                        "Kind": kind,
+                        "Policy": "00000000-0000-0000-0000-000000000000"
+                    }
+                    
+                    # Complete headers matching the working frontend request
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json, text/plain, */*',
+                        'Accept-Encoding': 'gzip, deflate, br, zstd',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                        'Origin': 'https://timeseries-dev',
+                        'Referer': 'https://timeseries-dev/profile-manager/dockboard',
+                        'Sec-Fetch-Dest': 'empty',
+                        'Sec-Fetch-Mode': 'cors',
+                        'Sec-Fetch-Site': 'same-origin',
+                        'mshdo-language': 'en',
+                        'x-xsrf-token': xsrf_token
+                    }
+                    
+                    response = requests.post(
+                        api_url, 
+                        headers=headers, 
+                        cookies=auth_cookies,
+                        data=json.dumps(data), 
+                        verify=False
+                    )
+                    print(f"Status: {response.status_code} for {period}_{kind}")
+                    if response.status_code != 200:
+                        print(f"Error response: {response.text}")
+                    else:
+                        print("Success!")
+                        # get profile id from response
+                        profile_id = response.json().get("Id")
+                        print(f"Created profile ID: {profile_id}")
 
 if __name__ == "__main__":
     creteProfileComputed()
