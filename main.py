@@ -1,95 +1,18 @@
-# yearData = {
-#     "Name": "yearTwo",
-#     "Period": {
-#         "Period": "P1Y",
-#         "Offset": "00:00:00",
-#         "TimeZone": "CET"
-#     },
-#     "Type": "Stored",
-#     "DirectoryId": 1175335,
-#     "Comment": "",
-#     "Expression": null,
-#     "DirectoryPath": "\\mbencek\\v5_4_43\\",
-#     "Unit": null,
-#     "Kind": "Quantitative"
-# }
-
-# monthData = {
-#     "Name": "month",
-#     "Period": {
-#         "Period": "P1M",
-#         "Offset": "00:00:00",
-#         "TimeZone": "CET"
-#     },
-#     "Type": "Stored",
-#     "DirectoryId": 1175335,
-#     "Comment": "",
-#     "Expression": null,
-#     "DirectoryPath": "\\mbencek\\v5_4_43\\",
-#     "Unit": null,
-#     "Kind": "Quantitative"
-# }
-
-# quantalData = {
-#   "Name": "kvartal",
-#   "Period": {
-#     "Period": "P3M",
-#     "Offset": "00:00:00",
-#     "TimeZone": "CET"
-#   },
-#   "Type": "Stored",
-#   "DirectoryId": 1175335,
-#   "Comment": "",
-#   "Expression": null,
-#   "DirectoryPath": "\\mbencek\\v5_4_43\\",
-#   "Unit": null,
-#   "Kind": "Quantitative"
-# }
-
-# weeekData = {
-#     "Name": "week",
-#     "Period": {
-#         "Period": "P1W",
-#         "Offset": "00:00:00",
-#         "TimeZone": "CET"
-#     },
-#     "Type": "Stored",
-#     "DirectoryId": 1175335,
-#     "Comment": "",
-#     "Expression": null,
-#     "DirectoryPath": "\\mbencek\\v5_4_43\\",
-#     "Unit": null,
-#     "Kind": "Quantitative"
-# }
-
-# monthComputed = {
-#     "Id": 3258473,
-#     "Name": "computedMonth",
-#     "Period": {
-#         "Period": "P1M",
-#         "Offset": "00:00:00",
-#         "TimeZone": "CET"
-#     },
-#     "Type": "Computed",
-#     "DirectoryId": 1348911,
-#     "Comment": "",
-#     "Expression": "sum(\\one, PQ)",
-#     "Kind": "Quantitative",
-#     "Policy": "00000000-0000-0000-0000-000000000000",
-#     "Created": "0001-01-01T00:00:00+00:00",
-#     "LastUpdate": "0001-01-01T00:00:00+00:00"
-# }
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import pandas as pd
 
 api_url = "https://timeseries-dev/profile-manager/api/tss/v2/timeseriesmetadata" #Post
 
-xsrf_token = "CfDJ8A7t2EOL0ipDrGiCgGk5RMbPO7CY6Qy-f8sk75pTBA-iELw7lQMeTo76AMQ-Ec5KyK-JqKPHg3PfsMFOWMCGikSUBDyTgkQoIF7peVslaZ4NprggdjAq3i5NPhRkYOwTWWTLpPBm_64bIF4fAvmbGe3JeHUWasdCJgUUTFlA_XGVzGt2HHaRgbvSD3MO8RKibg"
+xsrf_token = "CfDJ8A7t2EOL0ipDrGiCgGk5RMb-9FQYIb3mJBhuiWdLw9oAeOuDdchx9JaS8tgwMA96g5fpuZIXQecFaH5DPhGDYrv1gRCnY3tjJWvGMVJ9pEizlXsCesJsNuaejfYJ9ebiUUGUE2maxTj8_hvEBZO-VZwEnKaNzgNAYUmyGDwudKAQgkVA1GiOT8z83uIPTLHp8Q"
 
 auth_cookies = {
     '.AspNetCore.Antiforgery.9TtSrW0hzOs': 'CfDJ8A7t2EOL0ipDrGiCgGk5RMYWRZP1iIFXMAwYnWF8jO2GjDSige_ayBmrkGNG6B8oR0nYd9VjXsHfyBSbZGrJ3LiIM3Z72W95WQpQo1woewDJJo6Llp4PXMhqP-X2xk6-HkqBuas8gaIYVbKf1wkkVcM',
-    'XSRF-TOKEN': 'CfDJ8A7t2EOL0ipDrGiCgGk5RMbPO7CY6Qy-f8sk75pTBA-iELw7lQMeTo76AMQ-Ec5KyK-JqKPHg3PfsMFOWMCGikSUBDyTgkQoIF7peVslaZ4NprggdjAq3i5NPhRkYOwTWWTLpPBm_64bIF4fAvmbGe3JeHUWasdCJgUUTFlA_XGVzGt2HHaRgbvSD3MO8RKibg',
-    'dateRange': '%7B%22from%22%3A1757282400000%2C%22to%22%3A1757368800000%7D',
-    'MSHDO.Auth.TTL': '1757358726-1757359026',
-    'MSHDO.Auth': 'CfDJ8A7t2EOL0ipDrGiCgGk5RMbpMlghgj31VciRyMO-0Y3Lz7fHkhKMuBLQYdC6IEaLWrd-VxMkyZzzqEAoR03zs6POlsyac1KclTuQcR-awS-1g29LPNeshcdWS4fjIAoxyQcYFiUOLx-WUvuk31fa2MlHFrAMjM9wmOJdCKNnVR47wg_yb_yMnqP3bTuRAR4xsY8PlOkrFLV4A-jZKVWKTC7qjNvDsvDngbFA7cRVNaOD5M-8S1mogJigtUJwrc4LL6DzYhihYD3rxcpmXsj7COZnyLrlPpOxzmwKMS1ul6aIZeCvp85z48A_o9zbxBIcqA',
+    'dateRange': '%7B%22from%22%3A1757368800000%2C%22to%22%3A1757455200000%7D',
+    'MSHDO.Auth': 'CfDJ8A7t2EOL0ipDrGiCgGk5RMbvsFgAOds9R3mbJ4bqeGXxioOxi4HupOr-ZXtrU8JBMjoDYhjqDu9Put5LyGY_WzJQj8X87wrF4ru-VmK0VRS5XZaKi_FYoA8GFJX6wQrrm_R9j0OGMwy4duNuPXAmgMPvVKC3fexx43QXE2rsJRErL-G5RNYHJ996NKnappzpdWos5tFAZK9-GU-pWwSKSFl1MH-mmSZVmwOgkvGnlbi8og4okHFnvWOI_aPkEW4f0CRBgK4D6RcE8cYKlBAtnwL9MHH-FCmnRhiyM9KXpnr3fGGoMvSK5OQeP6OEuv0UGA',
+    'MSHDO.Auth.TTL': '1757436755-1757437055',
+    'XSRF-TOKEN': 'CfDJ8A7t2EOL0ipDrGiCgGk5RMb-9FQYIb3mJBhuiWdLw9oAeOuDdchx9JaS8tgwMA96g5fpuZIXQecFaH5DPhGDYrv1gRCnY3tjJWvGMVJ9pEizlXsCesJsNuaejfYJ9ebiUUGUE2maxTj8_hvEBZO-VZwEnKaNzgNAYUmyGDwudKAQgkVA1GiOT8z83uIPTLHp8Q',
     'MSHDO.Auth.Browser': 'faea7ff6335541bda1812cc0cdc8ae9e',
     'mshdo.NETCore.culture': 'en'
 }
@@ -97,12 +20,47 @@ auth_cookies = {
 import requests
 import json
 
+def parse_cookie_string(cookie_string):
+    """Parse a cookie string and return a dictionary of cookie key-value pairs."""
+    cookies = {}
+    for cookie in cookie_string.split('; '):
+        if '=' in cookie:
+            key, value = cookie.split('=', 1)
+            cookies[key] = value
+    return cookies
+
+def update_auth_cookies(cookie_string):
+    """Update the global auth_cookies with values from the provided cookie string."""
+    global auth_cookies
+    new_cookies = parse_cookie_string(cookie_string)
+    auth_cookies.update(new_cookies)
+
+def update_xsrf_token(token):
+    """Update the global xsrf_token with the provided token."""
+    global xsrf_token
+    xsrf_token = token
+
 def creteProfileComputed():
+    t = input("Enter token: ")
+    update_xsrf_token(t)
+    cookie = input("Enter cookies: ")
+    update_auth_cookies(cookie)
+
+    # Data structures to store results
+    results = {
+        'creation_errors': [],  # Profiles that failed to create
+        'validation_passed': [],  # Profiles that passed validation
+        'validation_failed': [],  # Profiles that failed validation
+        'data_retrieval_errors': [],  # Profiles that failed data retrieval
+        'supported_periods': {},  # Periods that work with their profiles
+        'period_summary': {}  # Summary count per period
+    }
+    
     periods = ["P1Y", "P1M", "P3M", "P6M", "P1W", "PT1H", "PT15M", "PT5M", "PT1M", "PT10M", "PT3M", "PT1S", "P1D"]
     for period in periods:
         kinds = ["Quantitative", "Continuous"]
         for kind in kinds:
-            profilePeriods = ["PH", "PD", "PW", "PE", "PM", "PQ", "PY"]
+            profilePeriods = ["H", "PD", "PW", "PE", "PM", "PQ", "PY"]
             for pP in profilePeriods:
                 functions = ["sum", "avg", "min", "max"]
                 for func in functions:
@@ -114,7 +72,7 @@ def creteProfileComputed():
                             "TimeZone": "CET"
                         },
                         "Type": "Computed",
-                        "DirectoryId": 1349193,
+                        "DirectoryId": 1351026,
                         "Comment": "",
                         "Expression": f"{func}(\\one, {pP})",
                         "Kind": kind,
@@ -147,11 +105,673 @@ def creteProfileComputed():
                     print(f"Status: {response.status_code} for {period}_{kind}")
                     if response.status_code != 200:
                         print(f"Error response: {response.text}")
+                        results['creation_errors'].append({
+                            'profile_name': f"computed_{period}_{kind}_{pP}_{func}",
+                            'period': period,
+                            'kind': kind,
+                            'function': func,
+                            'function_period': pP,
+                            'status_code': response.status_code,
+                            'error': response.text
+                        })
                     else:
-                        print("Success!")
-                        # get profile id from response
                         profile_id = response.json().get("Id")
                         print(f"Created profile ID: {profile_id}")
+                        
+                        # Get profile data
+                        get_profile_data(profile_id, f"computed_{period}_{kind}_{pP}_{func}", results, period, {
+                            "Period": period,
+                            "Kind": kind,
+                            "Function": func,
+                            "FunctionPeriod": pP
+                        })
+
+    # Return results for further analysis
+    return results
+
+def get_profile_data(profile_id, profile_name, results, period, profile_data):
+    """Fetch data from a created profile and store results in the results dictionary."""
+    url_get_profile_data = f"https://timeseries-dev/profile-manager/api/tss/TimeSeriesData/?id={profile_id}&unixDateFrom=1757368800&unixDateTo=1757455200&includeNulls=true"
+    
+    headers = {
+        'Accept': 'application/json',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+        'Referer': 'https://timeseries-dev/profile-manager/dockboard',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Ch-Ua': '"Not;A=Brand";v="99", "Brave";v="139", "Chromium";v="139"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Gpc': '1',
+        'mshdo-language': 'en',
+        'priority': 'u=1, i'
+    }
+    
+    try:
+        response = requests.get(
+            url_get_profile_data,
+            headers=headers,
+            cookies=auth_cookies,
+            verify=False
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            first_value = data[0].get("Value")
+            expected_value = None
+            validation_passed = False
+            
+            if profile_data["Function"] == "sum":
+                if profile_data["Kind"] == "Quantitative":
+                    if profile_data["Period"] == "P1D":  # Daily period
+                        if profile_data["FunctionPeriod"] == "PD":  # Sum over day
+                            expected_value = 24  # 24 hours in a day, each hour has value 1
+                        elif profile_data["FunctionPeriod"] == "PH":  # Sum over hour
+                            expected_value = 1  # Each hour contains value 1
+                    elif profile_data["Period"] == "PT1H":  # Hourly period
+                        if profile_data["FunctionPeriod"] == "PH":  # Sum over hour
+                            expected_value = 1
+                elif profile_data["Kind"] == "Continuous":
+                    # For continuous data, sum would integrate over time
+                    if profile_data["Period"] == "P1D":
+                        if profile_data["FunctionPeriod"] == "PD":
+                            expected_value = 24  # Integral of 1 over 24 hours
+                    elif profile_data["Period"] == "PT1H":
+                        if profile_data["FunctionPeriod"] == "PH":
+                            expected_value = 1  # Integral of 1 over 1 hour
+                    elif profile_data["Period"] == "P1W":
+                        if profile_data["FunctionPeriod"] == "PW":
+                            expected_value = 168  # 7 days * 24 hours = 168 hours
+                    elif profile_data["Period"] == "P1M":
+                        if profile_data["FunctionPeriod"] == "PM":
+                            expected_value = 720  # Approximate 30 days * 24 hours = 720 hours
+                    elif profile_data["Period"] in ["PT1M", "PT5M", "PT10M", "PT15M"]:
+                        if profile_data["FunctionPeriod"] == "H":  # Sum over hour in minute intervals
+                            # Minutes per hour: PT1M=60, PT5M=12, PT10M=6, PT15M=4
+                            minutes = int(profile_data["Period"].replace("PT", "").replace("M", ""))
+                            expected_value = 60 // minutes  # Number of intervals per hour
+
+            elif profile_data["Function"] in ["avg", "min", "max"]:
+                # Average, min, max should always be 1 since source data is constant 1
+                expected_value = 1
+                
+            # Check validation
+            if expected_value is not None:
+                validation_passed = (first_value == expected_value)
+                
+                profile_result = {
+                    'profile_name': profile_name,
+                    'profile_id': profile_id,
+                    'period': profile_data["Period"],
+                    'kind': profile_data["Kind"],
+                    'function': profile_data["Function"],
+                    'function_period': profile_data["FunctionPeriod"],
+                    'actual_value': first_value,
+                    'expected_value': expected_value,
+                    'validation_passed': validation_passed
+                }
+                
+                if validation_passed:
+                    results['validation_passed'].append(profile_result)
+                    
+                    # Add to supported periods
+                    if period not in results['supported_periods']:
+                        results['supported_periods'][period] = []
+                    results['supported_periods'][period].append(profile_result)
+                else:
+                    results['validation_failed'].append(profile_result)
+            else:
+                results['validation_failed'].append({
+                    'profile_name': profile_name,
+                    'profile_id': profile_id,
+                    'period': profile_data["Period"],
+                    'kind': profile_data["Kind"],
+                    'function': profile_data["Function"],
+                    'function_period': profile_data["FunctionPeriod"],
+                    'actual_value': first_value,
+                    'expected_value': 'Unknown',
+                    'validation_passed': False,
+                    'error': 'Unknown validation case'
+                })
+                
+        else:
+            results['data_retrieval_errors'].append({
+                'profile_name': profile_name,
+                'profile_id': profile_id,
+                'status_code': response.status_code,
+                'error': response.text
+            })
+            print(f"Failed to get data for profile {profile_id}. Status: {response.status_code}")
+            print(f"Error: {response.text}")
+            
+    except Exception as e:
+        results['data_retrieval_errors'].append({
+            'profile_name': profile_name,
+            'profile_id': profile_id,
+            'error': str(e)
+        })
+        print(f"Exception while getting data for profile {profile_id}: {str(e)}")
+
+def get_working_profiles_for_period(results, period):
+    """Get all working profiles for a specific period."""
+    return results['supported_periods'].get(period, [])
+
+def get_profiles_by_function(results, function_name):
+    """Get all working profiles that use a specific function (sum, avg, min, max)."""
+    matching_profiles = []
+    for profiles in results['supported_periods'].values():
+        for profile in profiles:
+            if profile['function'] == function_name:
+                matching_profiles.append(profile)
+    return matching_profiles
+
+def get_profiles_by_kind(results, kind):
+    """Get all working profiles of a specific kind (Quantitative, Continuous)."""
+    matching_profiles = []
+    for profiles in results['supported_periods'].values():
+        for profile in profiles:
+            if profile['kind'] == kind:
+                matching_profiles.append(profile)
+    return matching_profiles
+
+def get_summary_stats(results):
+    """Get summary statistics about the results."""
+    total_attempted = (len(results['creation_errors']) + 
+                      len(results['validation_passed']) + 
+                      len(results['validation_failed']) + 
+                      len(results['data_retrieval_errors']))
+    
+    return {
+        'total_attempted': total_attempted,
+        'successful_creations': len(results['validation_passed']) + len(results['validation_failed']),
+        'validation_passed': len(results['validation_passed']),
+        'validation_failed': len(results['validation_failed']),
+        'creation_failed': len(results['creation_errors']),
+        'data_retrieval_failed': len(results['data_retrieval_errors']),
+        'working_periods': len(results['supported_periods']),
+        'success_rate': len(results['validation_passed']) / total_attempted * 100 if total_attempted > 0 else 0
+    }
+
+def export_results_to_csv(results, filename="profile_results.csv"):
+    """Export results to CSV file for further analysis."""
+    import csv
+    
+    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = ['profile_name', 'profile_id', 'period', 'kind', 'function', 'function_period', 
+                     'actual_value', 'expected_value', 'validation_passed', 'status', 'error']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        
+        writer.writeheader()
+        
+        # Write validation passed profiles
+        for profile in results['validation_passed']:
+            row = profile.copy()
+            row['status'] = 'validation_passed'
+            row['error'] = ''
+            writer.writerow(row)
+        
+        # Write validation failed profiles
+        for profile in results['validation_failed']:
+            row = profile.copy()
+            row['status'] = 'validation_failed'
+            row['error'] = profile.get('error', '')
+            writer.writerow(row)
+        
+        # Write creation errors
+        for error in results['creation_errors']:
+            writer.writerow({
+                'profile_name': error['profile_name'],
+                'profile_id': '',
+                'period': error['period'],
+                'kind': error['kind'],
+                'function': error['function'],
+                'function_period': error['function_period'],
+                'actual_value': '',
+                'expected_value': '',
+                'validation_passed': False,
+                'status': 'creation_failed',
+                'error': f"Status {error['status_code']}: {error['error']}"
+            })
+        
+        # Write data retrieval errors
+        for error in results['data_retrieval_errors']:
+            writer.writerow({
+                'profile_name': error['profile_name'],
+                'profile_id': error.get('profile_id', ''),
+                'period': '',
+                'kind': '',
+                'function': '',
+                'function_period': '',
+                'actual_value': '',
+                'expected_value': '',
+                'validation_passed': False,
+                'status': 'data_retrieval_failed',
+                'error': error['error']
+            })
+    
+    print(f"Results exported to {filename}")
+
+def print_detailed_analysis(results):
+    """Print detailed analysis of the results."""
+    stats = get_summary_stats(results)
+    
+    print(f"\n{'='*60}")
+    print("DETAILED ANALYSIS")
+    print(f"{'='*60}")
+    
+    print(f"Total profiles attempted: {stats['total_attempted']}")
+    print(f"Success rate: {stats['success_rate']:.1f}%")
+    print(f"Working periods: {stats['working_periods']}")
+    
+    print(f"\nBreakdown:")
+    print(f"  ✓ Validation passed: {stats['validation_passed']}")
+    print(f"  ✗ Validation failed: {stats['validation_failed']}")
+    print(f"  ✗ Creation failed: {stats['creation_failed']}")
+    print(f"  ✗ Data retrieval failed: {stats['data_retrieval_failed']}")
+    
+    print(f"\nWorking periods and profile counts:")
+    for period in sorted(results['supported_periods'].keys()):
+        profiles = results['supported_periods'][period]
+        print(f"  {period}: {len(profiles)} profiles")
+        
+        # Group by function
+        by_function = {}
+        for profile in profiles:
+            func = profile['function']
+            if func not in by_function:
+                by_function[func] = 0
+            by_function[func] += 1
+        
+        for func, count in by_function.items():
+            print(f"    {func}: {count}")
+    
+    print(f"\nFunction success rates:")
+    all_functions = ['sum', 'avg', 'min', 'max']
+    for func in all_functions:
+        passed = len(get_profiles_by_function(results, func))
+        attempted_func = sum(1 for p in results['validation_passed'] + results['validation_failed'] if p['function'] == func)
+        if attempted_func > 0:
+            rate = passed / attempted_func * 100
+            print(f"  {func}: {passed}/{attempted_func} ({rate:.1f}%)")
+    
+    print(f"\nKind success rates:")
+    for kind in ['Quantitative', 'Continuous']:
+        passed = len(get_profiles_by_kind(results, kind))
+        attempted_kind = sum(1 for p in results['validation_passed'] + results['validation_failed'] if p['kind'] == kind)
+        if attempted_kind > 0:
+            rate = passed / attempted_kind * 100
+            print(f"  {kind}: {passed}/{attempted_kind} ({rate:.1f}%)")
+
+def create_sankey_diagram(results):
+    """Create a Sankey diagram showing the flow from periods to validation results."""
+    
+    # Prepare data for Sankey diagram
+    labels = []
+    source = []
+    target = []
+    value = []
+    colors = []
+    
+    # Add period labels
+    periods = list(results['supported_periods'].keys())
+    for period in periods:
+        labels.append(f"Period: {period}")
+    
+    # Add result type labels
+    result_types = ["Validation Passed", "Validation Failed", "Creation Failed", "Data Retrieval Failed"]
+    for result_type in result_types:
+        labels.append(result_type)
+    
+    # Create flows from periods to validation passed
+    period_start_idx = 0
+    result_start_idx = len(periods)
+    
+    for i, period in enumerate(periods):
+        period_profiles = results['supported_periods'][period]
+        if period_profiles:
+            source.append(period_start_idx + i)
+            target.append(result_start_idx + 0)  # Validation Passed
+            value.append(len(period_profiles))
+    
+    # Add flows for failed validations, creation errors, etc.
+    period_failures = {}
+    for profile in results['validation_failed']:
+        period = profile['period']
+        if period not in period_failures:
+            period_failures[period] = 0
+        period_failures[period] += 1
+    
+    for period, count in period_failures.items():
+        if period in periods:
+            period_idx = periods.index(period)
+            source.append(period_start_idx + period_idx)
+            target.append(result_start_idx + 1)  # Validation Failed
+            value.append(count)
+    
+    # Add creation errors by period
+    creation_failures = {}
+    for error in results['creation_errors']:
+        period = error['period']
+        if period not in creation_failures:
+            creation_failures[period] = 0
+        creation_failures[period] += 1
+    
+    for period, count in creation_failures.items():
+        if period in periods:
+            period_idx = periods.index(period)
+        else:
+            # Add new period label if not in successful periods
+            labels.insert(result_start_idx, f"Period: {period}")
+            periods.append(period)
+            period_idx = len(periods) - 1
+            result_start_idx += 1
+            # Update target indices
+            for j in range(len(target)):
+                if target[j] >= result_start_idx - 1:
+                    target[j] += 1
+        
+        source.append(period_idx)
+        target.append(result_start_idx + 2)  # Creation Failed
+        value.append(count)
+    
+    # Create the Sankey diagram
+    fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(color="black", width=0.5),
+            label=labels,
+            color=["lightblue"] * len(periods) + ["green", "orange", "red", "purple"]
+        ),
+        link=dict(
+            source=source,
+            target=target,
+            value=value,
+            color=["rgba(0,255,0,0.3)" if target[i] == result_start_idx else 
+                   "rgba(255,165,0,0.3)" if target[i] == result_start_idx + 1 else
+                   "rgba(255,0,0,0.3)" for i in range(len(source))]
+        )
+    )])
+    
+    fig.update_layout(
+        title_text="Profile Creation Flow: Periods → Results",
+        font_size=12,
+        height=600
+    )
+    
+    return fig
+
+def create_success_rate_chart(results):
+    """Create a bar chart showing success rates by period."""
+    
+    periods = []
+    success_rates = []
+    total_attempts = []
+    successful_counts = []
+    
+    # Calculate success rates for each period
+    all_periods = set()
+    
+    # Get all periods from successful results
+    for period in results['supported_periods'].keys():
+        all_periods.add(period)
+    
+    # Get all periods from failed results
+    for profile in results['validation_failed']:
+        all_periods.add(profile['period'])
+    
+    for error in results['creation_errors']:
+        all_periods.add(error['period'])
+    
+    for period in sorted(all_periods):
+        successful = len(results['supported_periods'].get(period, []))
+        failed_validation = sum(1 for p in results['validation_failed'] if p['period'] == period)
+        failed_creation = sum(1 for e in results['creation_errors'] if e['period'] == period)
+        failed_data = sum(1 for e in results['data_retrieval_errors'] if e.get('period') == period)
+        
+        total = successful + failed_validation + failed_creation + failed_data
+        
+        if total > 0:
+            periods.append(period)
+            success_rates.append((successful / total) * 100)
+            total_attempts.append(total)
+            successful_counts.append(successful)
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=periods,
+        y=success_rates,
+        text=[f"{successful_counts[i]}/{total_attempts[i]}" for i in range(len(periods))],
+        textposition='auto',
+        name='Success Rate (%)',
+        marker_color='lightgreen'
+    ))
+    
+    fig.update_layout(
+        title='Profile Creation Success Rate by Period',
+        xaxis_title='Period',
+        yaxis_title='Success Rate (%)',
+        yaxis=dict(range=[0, 100]),
+        height=500
+    )
+    
+    return fig
+
+def create_function_comparison_chart(results):
+    """Create a stacked bar chart comparing function performance."""
+    
+    functions = ['sum', 'avg', 'min', 'max']
+    periods = list(results['supported_periods'].keys())
+    
+    # Create data for each function
+    data = {func: [] for func in functions}
+    
+    for period in periods:
+        period_profiles = results['supported_periods'][period]
+        function_counts = {func: 0 for func in functions}
+        
+        for profile in period_profiles:
+            func = profile['function']
+            if func in function_counts:
+                function_counts[func] += 1
+        
+        for func in functions:
+            data[func].append(function_counts[func])
+    
+    fig = go.Figure()
+    
+    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
+    
+    for i, func in enumerate(functions):
+        fig.add_trace(go.Bar(
+            name=func,
+            x=periods,
+            y=data[func],
+            marker_color=colors[i]
+        ))
+    
+    fig.update_layout(
+        title='Working Profiles by Function and Period',
+        xaxis_title='Period',
+        yaxis_title='Number of Working Profiles',
+        barmode='stack',
+        height=500
+    )
+    
+    return fig
+
+def create_kind_comparison_chart(results):
+    """Create a pie chart comparing Quantitative vs Continuous profile success."""
+    
+    kind_counts = {'Quantitative': 0, 'Continuous': 0}
+    
+    for profiles in results['supported_periods'].values():
+        for profile in profiles:
+            kind = profile['kind']
+            if kind in kind_counts:
+                kind_counts[kind] += 1
+    
+    fig = go.Figure(data=[go.Pie(
+        labels=list(kind_counts.keys()),
+        values=list(kind_counts.values()),
+        hole=0.3,
+        marker_colors=['#FF9999', '#66B2FF']
+    )])
+    
+    fig.update_layout(
+        title='Distribution of Working Profiles by Kind',
+        height=400
+    )
+    
+    return fig
+
+def create_comprehensive_dashboard(results):
+    """Create a comprehensive dashboard with multiple visualizations."""
+    
+    # Create subplots
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=('Success Rate by Period', 'Function Distribution', 
+                       'Kind Distribution', 'Validation Results'),
+        specs=[[{"type": "bar"}, {"type": "bar"}],
+               [{"type": "pie"}, {"type": "bar"}]]
+    )
+    
+    # 1. Success Rate by Period
+    periods = []
+    success_rates = []
+    
+    all_periods = set()
+    for period in results['supported_periods'].keys():
+        all_periods.add(period)
+    for profile in results['validation_failed']:
+        all_periods.add(profile['period'])
+    for error in results['creation_errors']:
+        all_periods.add(error['period'])
+    
+    for period in sorted(all_periods):
+        successful = len(results['supported_periods'].get(period, []))
+        failed_validation = sum(1 for p in results['validation_failed'] if p['period'] == period)
+        failed_creation = sum(1 for e in results['creation_errors'] if e['period'] == period)
+        
+        total = successful + failed_validation + failed_creation
+        if total > 0:
+            periods.append(period)
+            success_rates.append((successful / total) * 100)
+    
+    fig.add_trace(
+        go.Bar(x=periods, y=success_rates, name='Success Rate', marker_color='lightgreen'),
+        row=1, col=1
+    )
+    
+    # 2. Function Distribution
+    function_counts = {'sum': 0, 'avg': 0, 'min': 0, 'max': 0}
+    for profiles in results['supported_periods'].values():
+        for profile in profiles:
+            func = profile['function']
+            if func in function_counts:
+                function_counts[func] += 1
+    
+    fig.add_trace(
+        go.Bar(x=list(function_counts.keys()), y=list(function_counts.values()), 
+               name='Functions', marker_color='lightblue'),
+        row=1, col=2
+    )
+    
+    # 3. Kind Distribution
+    kind_counts = {'Quantitative': 0, 'Continuous': 0}
+    for profiles in results['supported_periods'].values():
+        for profile in profiles:
+            kind = profile['kind']
+            if kind in kind_counts:
+                kind_counts[kind] += 1
+    
+    fig.add_trace(
+        go.Pie(labels=list(kind_counts.keys()), values=list(kind_counts.values()),
+               name="Kind Distribution"),
+        row=2, col=1
+    )
+    
+    # 4. Validation Results Summary
+    result_counts = {
+        'Validation Passed': len(results['validation_passed']),
+        'Validation Failed': len(results['validation_failed']),
+        'Creation Failed': len(results['creation_errors']),
+        'Data Retrieval Failed': len(results['data_retrieval_errors'])
+    }
+    
+    colors = ['green', 'orange', 'red', 'purple']
+    fig.add_trace(
+        go.Bar(x=list(result_counts.keys()), y=list(result_counts.values()),
+               name='Results', marker_color=colors),
+        row=2, col=2
+    )
+    
+    fig.update_layout(
+        title_text="Profile Creation Results Dashboard",
+        height=800,
+        showlegend=False
+    )
+    
+    return fig
+
+def visualize_results(results):
+    """Create and display all visualizations for the results."""
+    
+    print("Creating visualizations...")
+    
+    # Create Sankey diagram
+    sankey_fig = create_sankey_diagram(results)
+    sankey_fig.show()
+    
+    # Create success rate chart
+    success_fig = create_success_rate_chart(results)
+    success_fig.show()
+    
+    # Create function comparison chart
+    function_fig = create_function_comparison_chart(results)
+    function_fig.show()
+    
+    # Create kind comparison chart
+    kind_fig = create_kind_comparison_chart(results)
+    kind_fig.show()
+    
+    # Create comprehensive dashboard
+    dashboard_fig = create_comprehensive_dashboard(results)
+    dashboard_fig.show()
+    
+    print("All visualizations have been displayed!")
+    
+    return {
+        'sankey': sankey_fig,
+        'success_rate': success_fig,
+        'function_comparison': function_fig,
+        'kind_comparison': kind_fig,
+        'dashboard': dashboard_fig
+    }
 
 if __name__ == "__main__":
-    creteProfileComputed()
+    results = creteProfileComputed()
+    
+    # Create visualizations
+    visualizations = visualize_results(results)
+    
+    # The results data structure is now available with:
+    # results['validation_passed'] - List of profiles with correct validation
+    # results['validation_failed'] - List of profiles with incorrect validation  
+    # results['creation_errors'] - List of profiles that failed to create
+    # results['data_retrieval_errors'] - List of profiles with data retrieval issues
+    # results['supported_periods'] - Dictionary of working periods and their profiles
+    
+    # Visualizations are available in the 'visualizations' dictionary:
+    # visualizations['sankey'] - Flow diagram showing period → results
+    # visualizations['success_rate'] - Success rate by period
+    # visualizations['function_comparison'] - Working profiles by function
+    # visualizations['kind_comparison'] - Quantitative vs Continuous distribution
+    # visualizations['dashboard'] - Comprehensive dashboard with all metrics
