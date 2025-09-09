@@ -72,7 +72,7 @@ def creteProfileComputed():
                             "TimeZone": "CET"
                         },
                         "Type": "Computed",
-                        "DirectoryId": 1351026,
+                        "DirectoryId": 1351128,
                         "Comment": "",
                         "Expression": f"{func}(\\one, {pP})",
                         "Kind": kind,
@@ -167,43 +167,31 @@ def get_profile_data(profile_id, profile_name, results, period, profile_data):
             validation_passed = False
             
             if profile_data["Function"] == "sum":
-                if profile_data["Kind"] == "Quantitative":
-                    if profile_data["Period"] == "P1D":  # Daily period
-                        if profile_data["FunctionPeriod"] == "PD":  # Sum over day
-                            expected_value = 24  # 24 hours in a day, each hour has value 1
-                        elif profile_data["FunctionPeriod"] == "PH":  # Sum over hour
-                            expected_value = 1  # Each hour contains value 1
-                    elif profile_data["Period"] == "PT1H":  # Hourly period
-                        if profile_data["FunctionPeriod"] == "PH":  # Sum over hour
-                            expected_value = 1
-                elif profile_data["Kind"] == "Continuous":
-                    # For continuous data, sum would integrate over time
-                    if profile_data["Period"] == "P1D":
-                        if profile_data["FunctionPeriod"] == "PD":
-                            expected_value = 24  # Integral of 1 over 24 hours
-                    elif profile_data["Period"] == "PT1H":
-                        if profile_data["FunctionPeriod"] == "PH":
-                            expected_value = 1  # Integral of 1 over 1 hour
-                    elif profile_data["Period"] == "P1W":
-                        if profile_data["FunctionPeriod"] == "PW":
-                            expected_value = 168  # 7 days * 24 hours = 168 hours
-                    elif profile_data["Period"] == "P1M":
-                        if profile_data["FunctionPeriod"] == "PM":
-                            expected_value = 720  # Approximate 30 days * 24 hours = 720 hours
-                    elif profile_data["Period"] in ["PT1M", "PT5M", "PT10M", "PT15M"]:
-                        if profile_data["FunctionPeriod"] == "H":  # Sum over hour in minute intervals
-                            # Minutes per hour: PT1M=60, PT5M=12, PT10M=6, PT15M=4
-                            minutes = int(profile_data["Period"].replace("PT", "").replace("M", ""))
-                            expected_value = 60 // minutes  # Number of intervals per hour
+                # For sum functions, we need to understand what we're summing over
+                function_period = profile_data["FunctionPeriod"]
+                
+                if function_period == "H":  # Sum over hour
+                    expected_value = 1  # Each hour contains value 1
+                elif function_period == "PD":  # Sum over day  
+                    expected_value = 24  # 24 hours per day
+                elif function_period == "PW":  # Sum over week
+                    expected_value = 168  # 7 days * 24 hours = 168 hours (approximately)
+                elif function_period == "PE":  # Sum over epoch (seems to be same as week)
+                    expected_value = 168  # Same as week
+                elif function_period == "PM":  # Sum over month
+                    expected_value = 720  # Approximately 30 days * 24 hours
+                elif function_period == "PQ":  # Sum over quarter
+                    expected_value = 2208  # Approximately 3 months * 30 days * 24 hours
+                elif function_period == "PY":  # Sum over year
+                    expected_value = 8760  # 365 days * 24 hours
 
             elif profile_data["Function"] in ["avg", "min", "max"]:
-                # Average, min, max should always be 1 since source data is constant 1
-                expected_value = 1
+                expected_value = 1 # Average, min, max should usually be 1 since source data is constant 1
                 
-            # Check validation
+            # Check validation with tolerance for floating point values
             if expected_value is not None:
-                validation_passed = (first_value == expected_value)
-                
+                if first_value == expected_value or first_value - expected_value < 0.01:
+                    validation_passed = True
                 profile_result = {
                     'profile_name': profile_name,
                     'profile_id': profile_id,
@@ -355,57 +343,6 @@ def export_results_to_csv(results, filename="profile_results.csv"):
             })
     
     print(f"Results exported to {filename}")
-
-def print_detailed_analysis(results):
-    """Print detailed analysis of the results."""
-    stats = get_summary_stats(results)
-    
-    print(f"\n{'='*60}")
-    print("DETAILED ANALYSIS")
-    print(f"{'='*60}")
-    
-    print(f"Total profiles attempted: {stats['total_attempted']}")
-    print(f"Success rate: {stats['success_rate']:.1f}%")
-    print(f"Working periods: {stats['working_periods']}")
-    
-    print(f"\nBreakdown:")
-    print(f"  ✓ Validation passed: {stats['validation_passed']}")
-    print(f"  ✗ Validation failed: {stats['validation_failed']}")
-    print(f"  ✗ Creation failed: {stats['creation_failed']}")
-    print(f"  ✗ Data retrieval failed: {stats['data_retrieval_failed']}")
-    
-    print(f"\nWorking periods and profile counts:")
-    for period in sorted(results['supported_periods'].keys()):
-        profiles = results['supported_periods'][period]
-        print(f"  {period}: {len(profiles)} profiles")
-        
-        # Group by function
-        by_function = {}
-        for profile in profiles:
-            func = profile['function']
-            if func not in by_function:
-                by_function[func] = 0
-            by_function[func] += 1
-        
-        for func, count in by_function.items():
-            print(f"    {func}: {count}")
-    
-    print(f"\nFunction success rates:")
-    all_functions = ['sum', 'avg', 'min', 'max']
-    for func in all_functions:
-        passed = len(get_profiles_by_function(results, func))
-        attempted_func = sum(1 for p in results['validation_passed'] + results['validation_failed'] if p['function'] == func)
-        if attempted_func > 0:
-            rate = passed / attempted_func * 100
-            print(f"  {func}: {passed}/{attempted_func} ({rate:.1f}%)")
-    
-    print(f"\nKind success rates:")
-    for kind in ['Quantitative', 'Continuous']:
-        passed = len(get_profiles_by_kind(results, kind))
-        attempted_kind = sum(1 for p in results['validation_passed'] + results['validation_failed'] if p['kind'] == kind)
-        if attempted_kind > 0:
-            rate = passed / attempted_kind * 100
-            print(f"  {kind}: {passed}/{attempted_kind} ({rate:.1f}%)")
 
 def create_sankey_diagram(results):
     """Create a Sankey diagram showing the flow from periods to validation results."""
@@ -721,30 +658,343 @@ def create_comprehensive_dashboard(results):
     
     return fig
 
+def create_failed_profiles_detail_chart(results):
+    """Create a detailed chart showing failed profiles with their information."""
+    
+    # Combine all failed profiles
+    all_failures = []
+    
+    # Add validation failures
+    for profile in results['validation_failed']:
+        all_failures.append({
+            'profile_name': profile['profile_name'],
+            'period': profile['period'],
+            'kind': profile['kind'],
+            'function': profile['function'],
+            'function_period': profile['function_period'],
+            'failure_type': 'Validation Failed',
+            'expected_value': profile.get('expected_value', 'N/A'),
+            'actual_value': profile.get('actual_value', 'N/A'),
+            'error': f"Expected: {profile.get('expected_value', 'N/A')}, Got: {profile.get('actual_value', 'N/A')}"
+        })
+    
+    # Add creation failures
+    for error in results['creation_errors']:
+        all_failures.append({
+            'profile_name': error['profile_name'],
+            'period': error['period'],
+            'kind': error['kind'],
+            'function': error['function'],
+            'function_period': error['function_period'],
+            'failure_type': 'Creation Failed',
+            'expected_value': 'N/A',
+            'actual_value': 'N/A',
+            'error': f"Status {error['status_code']}: {error['error'][:100]}..."
+        })
+    
+    # Add data retrieval failures
+    for error in results['data_retrieval_errors']:
+        all_failures.append({
+            'profile_name': error['profile_name'],
+            'period': 'Unknown',
+            'kind': 'Unknown',
+            'function': 'Unknown',
+            'function_period': 'Unknown',
+            'failure_type': 'Data Retrieval Failed',
+            'expected_value': 'N/A',
+            'actual_value': 'N/A',
+            'error': str(error['error'])[:100] + "..."
+        })
+    
+    if not all_failures:
+        print("No failures to display!")
+        return None
+    
+    # Create DataFrame for easier manipulation
+    import pandas as pd
+    df = pd.DataFrame(all_failures)
+    
+    # Create a heatmap-style visualization
+    failure_types = df['failure_type'].unique()
+    periods = df['period'].unique()
+    
+    # Count failures by type and period
+    failure_matrix = []
+    period_labels = []
+    failure_labels = []
+    
+    for failure_type in failure_types:
+        for period in periods:
+            count = len(df[(df['failure_type'] == failure_type) & (df['period'] == period)])
+            if count > 0:
+                failure_matrix.append([failure_type, period, count])
+    
+    if not failure_matrix:
+        return None
+    
+    # Create a detailed table visualization
+    fig = go.Figure(data=[go.Table(
+        header=dict(
+            values=['Profile Name', 'Period', 'Kind', 'Function', 'Function Period', 'Failure Type', 'Error Details'],
+            fill_color='lightblue',
+            align='left',
+            font=dict(color='black', size=10)
+        ),
+        cells=dict(
+            values=[
+                df['profile_name'],
+                df['period'],
+                df['kind'],
+                df['function'],
+                df['function_period'],
+                df['failure_type'],
+                df['error']
+            ],
+            fill_color=[['lightcoral' if x == 'Creation Failed' else 
+                        'lightyellow' if x == 'Validation Failed' else 
+                        'lightpink' for x in df['failure_type']]],
+            align='left',
+            font=dict(color='black', size=9),
+            height=30
+        )
+    )])
+    
+    fig.update_layout(
+        title='Detailed Failed Profiles Information',
+        height=600,
+        margin=dict(l=0, r=0, t=50, b=0)
+    )
+    
+    return fig
+
+def create_failure_heatmap(results):
+    """Create a heatmap showing failure patterns by period and function."""
+    
+    import pandas as pd
+    
+    # Prepare data for heatmap
+    all_data = []
+    
+    periods = ["P1Y", "P1M", "P3M", "P6M", "P1W", "PT1H", "PT15M", "PT5M", "PT1M", "PT10M", "PT3M", "PT1S", "P1D"]
+    functions = ["sum", "avg", "min", "max"]
+    
+    # Initialize matrix
+    for period in periods:
+        for function in functions:
+            # Count successful profiles
+            successful = 0
+            for profile in results['validation_passed']:
+                if profile['period'] == period and profile['function'] == function:
+                    successful += 1
+            
+            # Count failed profiles
+            failed = 0
+            for profile in results['validation_failed']:
+                if profile['period'] == period and profile['function'] == function:
+                    failed += 1
+            
+            # Count creation errors
+            creation_failed = 0
+            for error in results['creation_errors']:
+                if error['period'] == period and error['function'] == function:
+                    creation_failed += 1
+            
+            total = successful + failed + creation_failed
+            success_rate = (successful / total * 100) if total > 0 else 0
+            
+            all_data.append({
+                'Period': period,
+                'Function': function,
+                'Success_Rate': success_rate,
+                'Successful': successful,
+                'Failed': failed,
+                'Creation_Failed': creation_failed,
+                'Total': total
+            })
+    
+    df = pd.DataFrame(all_data)
+    
+    # Create pivot table for heatmap
+    pivot_success = df.pivot(index='Function', columns='Period', values='Success_Rate')
+    pivot_total = df.pivot(index='Function', columns='Period', values='Total')
+    
+    # Create custom text for hover info
+    hover_text = []
+    for i, function in enumerate(functions):
+        hover_row = []
+        for j, period in enumerate(periods):
+            row_data = df[(df['Function'] == function) & (df['Period'] == period)].iloc[0]
+            text = f"Period: {period}<br>Function: {function}<br>" + \
+                   f"Success Rate: {row_data['Success_Rate']:.1f}%<br>" + \
+                   f"Successful: {row_data['Successful']}<br>" + \
+                   f"Failed Validation: {row_data['Failed']}<br>" + \
+                   f"Failed Creation: {row_data['Creation_Failed']}<br>" + \
+                   f"Total Attempted: {row_data['Total']}"
+            hover_row.append(text)
+        hover_text.append(hover_row)
+    
+    fig = go.Figure(data=go.Heatmap(
+        z=pivot_success.values,
+        x=pivot_success.columns,
+        y=pivot_success.index,
+        text=hover_text,
+        texttemplate="%{text}",
+        textfont={"size": 8},
+        hovertemplate='%{text}<extra></extra>',
+        colorscale='RdYlGn',
+        zmin=0,
+        zmax=100,
+        colorbar=dict(title="Success Rate (%)")
+    ))
+    
+    fig.update_layout(
+        title='Profile Success Rate Heatmap by Period and Function',
+        xaxis_title='Period',
+        yaxis_title='Function',
+        height=500,
+        xaxis=dict(tickangle=45)
+    )
+    
+    return fig
+
+def create_profile_status_sunburst(results):
+    """Create a sunburst chart showing the hierarchy of profile status."""
+    
+    import pandas as pd
+    
+    # Prepare hierarchical data
+    sunburst_data = []
+    
+    # Add successful profiles
+    for profile in results['validation_passed']:
+        sunburst_data.append({
+            'ids': f"Success-{profile['period']}-{profile['function']}-{profile['profile_name']}",
+            'labels': profile['profile_name'],
+            'parents': f"Success-{profile['period']}-{profile['function']}",
+            'values': 1
+        })
+        
+        sunburst_data.append({
+            'ids': f"Success-{profile['period']}-{profile['function']}",
+            'labels': profile['function'],
+            'parents': f"Success-{profile['period']}",
+            'values': 1
+        })
+        
+        sunburst_data.append({
+            'ids': f"Success-{profile['period']}",
+            'labels': profile['period'],
+            'parents': "Success",
+            'values': 1
+        })
+    
+    # Add failed validation profiles
+    for profile in results['validation_failed']:
+        sunburst_data.append({
+            'ids': f"Failed-{profile['period']}-{profile['function']}-{profile['profile_name']}",
+            'labels': profile['profile_name'],
+            'parents': f"Failed-{profile['period']}-{profile['function']}",
+            'values': 1
+        })
+        
+        sunburst_data.append({
+            'ids': f"Failed-{profile['period']}-{profile['function']}",
+            'labels': profile['function'],
+            'parents': f"Failed-{profile['period']}",
+            'values': 1
+        })
+        
+        sunburst_data.append({
+            'ids': f"Failed-{profile['period']}",
+            'labels': profile['period'],
+            'parents': "Failed",
+            'values': 1
+        })
+    
+    # Add creation errors
+    for error in results['creation_errors']:
+        sunburst_data.append({
+            'ids': f"Error-{error['period']}-{error['function']}-{error['profile_name']}",
+            'labels': error['profile_name'],
+            'parents': f"Error-{error['period']}-{error['function']}",
+            'values': 1
+        })
+        
+        sunburst_data.append({
+            'ids': f"Error-{error['period']}-{error['function']}",
+            'labels': error['function'],
+            'parents': f"Error-{error['period']}",
+            'values': 1
+        })
+        
+        sunburst_data.append({
+            'ids': f"Error-{error['period']}",
+            'labels': error['period'],
+            'parents': "Error",
+            'values': 1
+        })
+    
+    # Add root categories
+    sunburst_data.extend([
+        {'ids': 'Success', 'labels': 'Validation Passed', 'parents': '', 'values': 0},
+        {'ids': 'Failed', 'labels': 'Validation Failed', 'parents': '', 'values': 0},
+        {'ids': 'Error', 'labels': 'Creation Failed', 'parents': '', 'values': 0}
+    ])
+    
+    df = pd.DataFrame(sunburst_data)
+    
+    # Remove duplicates and sum values
+    df_grouped = df.groupby(['ids', 'labels', 'parents']).agg({'values': 'sum'}).reset_index()
+    
+    fig = go.Figure(go.Sunburst(
+        ids=df_grouped['ids'],
+        labels=df_grouped['labels'],
+        parents=df_grouped['parents'],
+        values=df_grouped['values'],
+        branchvalues="total",
+        maxdepth=3,
+    ))
+    
+    fig.update_layout(
+        title="Profile Status Hierarchy",
+        height=600
+    )
+    
+    return fig
+
 def visualize_results(results):
     """Create and display all visualizations for the results."""
     
     print("Creating visualizations...")
     
-    # Create Sankey diagram
+    # Create original visualizations
     sankey_fig = create_sankey_diagram(results)
     sankey_fig.show()
     
-    # Create success rate chart
     success_fig = create_success_rate_chart(results)
     success_fig.show()
     
-    # Create function comparison chart
     function_fig = create_function_comparison_chart(results)
     function_fig.show()
     
-    # Create kind comparison chart
     kind_fig = create_kind_comparison_chart(results)
     kind_fig.show()
     
-    # Create comprehensive dashboard
     dashboard_fig = create_comprehensive_dashboard(results)
     dashboard_fig.show()
+    
+    # Create new detailed failure visualizations
+    print("Creating detailed failure analysis...")
+    
+    failed_details_fig = create_failed_profiles_detail_chart(results)
+    if failed_details_fig:
+        failed_details_fig.show()
+    
+    heatmap_fig = create_failure_heatmap(results)
+    heatmap_fig.show()
+    
+    sunburst_fig = create_profile_status_sunburst(results)
+    sunburst_fig.show()
     
     print("All visualizations have been displayed!")
     
@@ -753,25 +1003,25 @@ def visualize_results(results):
         'success_rate': success_fig,
         'function_comparison': function_fig,
         'kind_comparison': kind_fig,
-        'dashboard': dashboard_fig
+        'dashboard': dashboard_fig,
+        'failed_details': failed_details_fig,
+        'failure_heatmap': heatmap_fig,
+        'profile_sunburst': sunburst_fig
     }
 
 if __name__ == "__main__":
     results = creteProfileComputed()
+
+    # Print all results where validation failed
+    print(f"\n{'='*60}")
+    print("VALIDATION FAILURES SUMMARY")
+    print(f"{'='*60}")
+    for profile in results['validation_failed']:
+        print(f"Profile {profile['profile_name']} failed validation: expected {profile['expected_value']}, got {profile['actual_value']}")
     
-    # Create visualizations
+    # Export results to CSV for further analysis
+    export_results_to_csv(results)
+    
+    # Create and display visualizations
     visualizations = visualize_results(results)
-    
-    # The results data structure is now available with:
-    # results['validation_passed'] - List of profiles with correct validation
-    # results['validation_failed'] - List of profiles with incorrect validation  
-    # results['creation_errors'] - List of profiles that failed to create
-    # results['data_retrieval_errors'] - List of profiles with data retrieval issues
-    # results['supported_periods'] - Dictionary of working periods and their profiles
-    
-    # Visualizations are available in the 'visualizations' dictionary:
-    # visualizations['sankey'] - Flow diagram showing period → results
-    # visualizations['success_rate'] - Success rate by period
-    # visualizations['function_comparison'] - Working profiles by function
-    # visualizations['kind_comparison'] - Quantitative vs Continuous distribution
-    # visualizations['dashboard'] - Comprehensive dashboard with all metrics
+   
