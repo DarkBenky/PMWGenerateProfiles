@@ -2,6 +2,16 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
+import datetime
+import calendar
+import requests
+import json
+import warnings
+import urllib3
+
+# Disable SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
 api_url = "https://timeseries-dev/profile-manager/api/tss/v2/timeseriesmetadata" #Post
 
@@ -16,9 +26,6 @@ auth_cookies = {
     'MSHDO.Auth.Browser': 'faea7ff6335541bda1812cc0cdc8ae9e',
     'mshdo.NETCore.culture': 'en'
 }
-
-import requests
-import json
 
 def parse_cookie_string(cookie_string):
     """Parse a cookie string and return a dictionary of cookie key-value pairs."""
@@ -72,7 +79,7 @@ def creteProfileComputed():
                             "TimeZone": "CET"
                         },
                         "Type": "Computed",
-                        "DirectoryId": 1351128,
+                        "DirectoryId": 1351527,
                         "Comment": "",
                         "Expression": f"{func}(\\one, {pP})",
                         "Kind": kind,
@@ -129,121 +136,238 @@ def creteProfileComputed():
     # Return results for further analysis
     return results
 
+def generateDatesForPeriod():
+    """Generate Unix timestamps for the first day of each month in 2023 and 2024 (leap year)."""
+    datesUnix = []
+    isLeap = []
+    endDate = []
+    months = []
+    years = []
+    
+    # Generate dates for 2023 (non-leap year)
+    for month in range(1, 13):
+        data = f"1.{month}.2023 00:00:00"
+        start_timestamp = int(datetime.datetime.strptime(data, "%d.%m.%Y %H:%M:%S").timestamp())
+        
+        
+        end_data = f"3.{month}.2023 00:00:00"
+        end_timestamp = int(datetime.datetime.strptime(end_data, "%d.%m.%Y %H:%M:%S").timestamp())
+        
+        datesUnix.append(start_timestamp)
+        endDate.append(end_timestamp)
+        isLeap.append(False)
+        months.append(month)
+        years.append(2023)
+    
+    # Generate dates for 2024 (leap year)
+    for month in range(1, 13):
+        data = f"1.{month}.2024 00:00:00"
+        start_timestamp = int(datetime.datetime.strptime(data, "%d.%m.%Y %H:%M:%S").timestamp())
+        
+        
+        end_data = f"3.{month}.2024 00:00:00"
+        end_timestamp = int(datetime.datetime.strptime(end_data, "%d.%m.%Y %H:%M:%S").timestamp())
+        
+        datesUnix.append(start_timestamp)
+        endDate.append(end_timestamp)
+        isLeap.append(True)
+        months.append(month)
+        years.append(2024)
+    
+    return datesUnix, isLeap, endDate, months, years
+
+
+def get_expected_value_for_month(function, function_period, month, year, is_leap_year):
+    """Calculate expected value for a specific month and year based on function and function period."""
+    
+    # Get number of days in the month
+    days_in_month = calendar.monthrange(year, month)[1]
+    
+    if function == "sum":
+        if function_period == "H":  # Sum over hour
+            return 1  # Each hour contains value 1
+        elif function_period == "PD":  # Sum over day  
+            return 24  # 24 hours per day
+        elif function_period == "PW":  # Sum over week
+            return 168  # 7 days * 24 hours = 168 hours
+        elif function_period == "PE":  # Sum over epoch (same as week)
+            return 168
+        elif function_period == "PM":  # Sum over month
+            return days_in_month * 24  # Actual days in month * 24 hours
+        elif function_period == "PQ":  # Sum over quarter
+            # For quarters, we need to consider which quarter this month belongs to
+            quarter_months = {
+                1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12]
+            }
+            quarter = 1
+            for q, months in quarter_months.items():
+                if month in months:
+                    quarter = q
+                    break
+            
+            # Calculate total days in the quarter
+            total_days = 0
+            for q_month in quarter_months[quarter]:
+                total_days += calendar.monthrange(year, q_month)[1]
+            
+            return total_days * 24  # Total days in quarter * 24 hours
+        elif function_period == "PY":  # Sum over year
+            if is_leap_year:
+                return 366 * 24  # 366 days * 24 hours for leap year
+            else:
+                return 365 * 24  # 365 days * 24 hours for normal year
+    
+    elif function in ["avg", "min", "max"]:
+        return 1  # Average, min, max should be 1 since source data is constant 1
+    
+    return None
+
+
 def get_profile_data(profile_id, profile_name, results, period, profile_data):
     """Fetch data from a created profile and store results in the results dictionary."""
-    url_get_profile_data = f"https://timeseries-dev/profile-manager/api/tss/TimeSeriesData/?id={profile_id}&unixDateFrom=1757368800&unixDateTo=1757455200&includeNulls=true"
+    dates, isLeapYear, endDate, months, years = generateDatesForPeriod()
     
-    headers = {
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip, deflate, br, zstd',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-        'Referer': 'https://timeseries-dev/profile-manager/dockboard',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'Sec-Ch-Ua': '"Not;A=Brand";v="99", "Brave";v="139", "Chromium";v="139"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"Windows"',
-        'Sec-Gpc': '1',
-        'mshdo-language': 'en',
-        'priority': 'u=1, i'
-    }
-    
-    try:
-        response = requests.get(
-            url_get_profile_data,
-            headers=headers,
-            cookies=auth_cookies,
-            verify=False
-        )
+    for dStart, leap, dEnd, month, year in zip(dates, isLeapYear, endDate, months, years):
+        url_get_profile_data = f"https://timeseries-dev/profile-manager/api/tss/TimeSeriesData/?id={profile_id}&unixDateFrom={dStart}&unixDateTo={dEnd}&includeNulls=true"
         
-        if response.status_code == 200:
-            data = response.json()
-            
-            first_value = data[0].get("Value")
-            expected_value = None
-            validation_passed = False
-            
-            if profile_data["Function"] == "sum":
-                # For sum functions, we need to understand what we're summing over
-                function_period = profile_data["FunctionPeriod"]
-                
-                if function_period == "H":  # Sum over hour
-                    expected_value = 1  # Each hour contains value 1
-                elif function_period == "PD":  # Sum over day  
-                    expected_value = 24  # 24 hours per day
-                elif function_period == "PW":  # Sum over week
-                    expected_value = 168  # 7 days * 24 hours = 168 hours (approximately)
-                elif function_period == "PE":  # Sum over epoch (seems to be same as week)
-                    expected_value = 168  # Same as week
-                elif function_period == "PM":  # Sum over month
-                    expected_value = 720  # Approximately 30 days * 24 hours
-                elif function_period == "PQ":  # Sum over quarter
-                    expected_value = 2208  # Approximately 3 months * 30 days * 24 hours
-                elif function_period == "PY":  # Sum over year
-                    expected_value = 8760  # 365 days * 24 hours
+        headers = {
+            'Accept': 'application/json',
+            'Accept-Encoding': 'gzip, deflate, br, zstd',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+            'Referer': 'https://timeseries-dev/profile-manager/dockboard',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Ch-Ua': '"Not;A=Brand";v="99", "Brave";v="139", "Chromium";v="139"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Sec-Gpc': '1',
+            'mshdo-language': 'en',
+            'priority': 'u=1, i'
+        }
+        
+        try:
+            response = requests.get(
+                url_get_profile_data,
+                headers=headers,
+                cookies=auth_cookies,
+                verify=False
+            )
 
-            elif profile_data["Function"] in ["avg", "min", "max"]:
-                expected_value = 1 # Average, min, max should usually be 1 since source data is constant 1
+            if response.status_code == 200:
+                data = response.json()
                 
-            # Check validation with tolerance for floating point values
-            if expected_value is not None:
-                if first_value == expected_value or first_value - expected_value < 0.01:
-                    validation_passed = True
-                profile_result = {
-                    'profile_name': profile_name,
-                    'profile_id': profile_id,
-                    'period': profile_data["Period"],
-                    'kind': profile_data["Kind"],
-                    'function': profile_data["Function"],
-                    'function_period': profile_data["FunctionPeriod"],
-                    'actual_value': first_value,
-                    'expected_value': expected_value,
-                    'validation_passed': validation_passed
-                }
+                if not data:
+                    print(f"No data returned for profile {profile_id} for {year}-{month:02d}")
+                    continue
                 
-                if validation_passed:
-                    results['validation_passed'].append(profile_result)
+                first_value = data[0].get("Value")
+                
+                # Calculate expected value based on the specific month and year
+                expected_value = get_expected_value_for_month(
+                    profile_data["Function"], 
+                    profile_data["FunctionPeriod"], 
+                    month, 
+                    year, 
+                    leap
+                )
+                
+                validation_passed = False
+                
+                # Check validation with tolerance for floating point values
+                if expected_value is not None:
+                    if first_value == expected_value or abs(first_value - expected_value) < 0.1:
+                        validation_passed = True
                     
-                    # Add to supported periods
-                    if period not in results['supported_periods']:
-                        results['supported_periods'][period] = []
-                    results['supported_periods'][period].append(profile_result)
+                    profile_result = {
+                        'profile_name': profile_name,
+                        'profile_id': profile_id,
+                        'period': profile_data["Period"],
+                        'kind': profile_data["Kind"],
+                        'function': profile_data["Function"],
+                        'function_period': profile_data["FunctionPeriod"],
+                        'actual_value': first_value,
+                        'expected_value': expected_value,
+                        'validation_passed': validation_passed,
+                        'test_month': month,
+                        'test_year': year,
+                        'is_leap_year': leap,
+                        'days_in_month': calendar.monthrange(year, month)[1]
+                    }
+                    
+                    if validation_passed:
+                        # Only add to validation_passed if ALL months pass
+                        # We'll handle this logic below
+                        pass
+                    else:
+                        results['validation_failed'].append(profile_result)
+                        print(f"Validation failed for {profile_name} - {year}-{month:02d}: expected {expected_value}, got {first_value}")
+                        # If any month fails, we consider the whole profile failed
+                        return
                 else:
-                    results['validation_failed'].append(profile_result)
+                    results['validation_failed'].append({
+                        'profile_name': profile_name,
+                        'profile_id': profile_id,
+                        'period': profile_data["Period"],
+                        'kind': profile_data["Kind"],
+                        'function': profile_data["Function"],
+                        'function_period': profile_data["FunctionPeriod"],
+                        'actual_value': first_value,
+                        'expected_value': 'Unknown',
+                        'validation_passed': False,
+                        'error': 'Unknown validation case',
+                        'test_month': month,
+                        'test_year': year,
+                        'is_leap_year': leap
+                    })
+                    return
+                    
             else:
-                results['validation_failed'].append({
+                results['data_retrieval_errors'].append({
                     'profile_name': profile_name,
                     'profile_id': profile_id,
-                    'period': profile_data["Period"],
-                    'kind': profile_data["Kind"],
-                    'function': profile_data["Function"],
-                    'function_period': profile_data["FunctionPeriod"],
-                    'actual_value': first_value,
-                    'expected_value': 'Unknown',
-                    'validation_passed': False,
-                    'error': 'Unknown validation case'
+                    'status_code': response.status_code,
+                    'error': response.text,
+                    'test_month': month,
+                    'test_year': year
                 })
+                print(f"Failed to get data for profile {profile_id} for {year}-{month:02d}. Status: {response.status_code}")
+                return
                 
-        else:
+        except Exception as e:
             results['data_retrieval_errors'].append({
                 'profile_name': profile_name,
                 'profile_id': profile_id,
-                'status_code': response.status_code,
-                'error': response.text
+                'error': str(e),
+                'test_month': month,
+                'test_year': year
             })
-            print(f"Failed to get data for profile {profile_id}. Status: {response.status_code}")
-            print(f"Error: {response.text}")
-            
-    except Exception as e:
-        results['data_retrieval_errors'].append({
-            'profile_name': profile_name,
-            'profile_id': profile_id,
-            'error': str(e)
-        })
-        print(f"Exception while getting data for profile {profile_id}: {str(e)}")
+            print(f"Exception while getting data for profile {profile_id} for {year}-{month:02d}: {str(e)}")
+            return
+    
+    # If we reach here, all months passed validation
+    summary_result = {
+        'profile_name': profile_name,
+        'profile_id': profile_id,
+        'period': profile_data["Period"],
+        'kind': profile_data["Kind"],
+        'function': profile_data["Function"],
+        'function_period': profile_data["FunctionPeriod"],
+        'validation_passed': True,
+        'months_tested': len(dates),
+        'all_months_passed': True
+    }
+    
+    results['validation_passed'].append(summary_result)
+    
+    # Add to supported periods
+    if period not in results['supported_periods']:
+        results['supported_periods'][period] = []
+    results['supported_periods'][period].append(summary_result)
+    
+    print(f"Profile {profile_name} passed validation for all {len(dates)} months!")
 
 def get_working_profiles_for_period(results, period):
     """Get all working profiles for a specific period."""
@@ -291,23 +415,38 @@ def export_results_to_csv(results, filename="profile_results.csv"):
     
     with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
         fieldnames = ['profile_name', 'profile_id', 'period', 'kind', 'function', 'function_period', 
-                     'actual_value', 'expected_value', 'validation_passed', 'status', 'error']
+                     'actual_value', 'expected_value', 'validation_passed', 'status', 'error', 
+                     'test_month', 'test_year', 'is_leap_year', 'days_in_month', 'months_tested', 'all_months_passed']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         
         writer.writeheader()
         
         # Write validation passed profiles
         for profile in results['validation_passed']:
-            row = profile.copy()
+            row = {}
+            # Only include fields that are in fieldnames
+            for field in fieldnames:
+                if field in profile:
+                    row[field] = profile[field]
+                else:
+                    row[field] = ''
             row['status'] = 'validation_passed'
-            row['error'] = ''
+            if 'error' not in row or row['error'] == '':
+                row['error'] = ''
             writer.writerow(row)
         
         # Write validation failed profiles
         for profile in results['validation_failed']:
-            row = profile.copy()
+            row = {}
+            # Only include fields that are in fieldnames
+            for field in fieldnames:
+                if field in profile:
+                    row[field] = profile[field]
+                else:
+                    row[field] = ''
             row['status'] = 'validation_failed'
-            row['error'] = profile.get('error', '')
+            if 'error' not in row or row['error'] == '':
+                row['error'] = profile.get('error', '')
             writer.writerow(row)
         
         # Write creation errors
@@ -323,7 +462,13 @@ def export_results_to_csv(results, filename="profile_results.csv"):
                 'expected_value': '',
                 'validation_passed': False,
                 'status': 'creation_failed',
-                'error': f"Status {error['status_code']}: {error['error']}"
+                'error': f"Status {error['status_code']}: {error['error']}",
+                'test_month': '',
+                'test_year': '',
+                'is_leap_year': '',
+                'days_in_month': '',
+                'months_tested': '',
+                'all_months_passed': ''
             })
         
         # Write data retrieval errors
@@ -339,7 +484,13 @@ def export_results_to_csv(results, filename="profile_results.csv"):
                 'expected_value': '',
                 'validation_passed': False,
                 'status': 'data_retrieval_failed',
-                'error': error['error']
+                'error': error['error'],
+                'test_month': error.get('test_month', ''),
+                'test_year': error.get('test_year', ''),
+                'is_leap_year': '',
+                'days_in_month': '',
+                'months_tested': '',
+                'all_months_passed': ''
             })
     
     print(f"Results exported to {filename}")
@@ -666,8 +817,14 @@ def create_failed_profiles_detail_chart(results):
     
     # Add validation failures
     for profile in results['validation_failed']:
+        month_info = ""
+        if profile.get('test_month') and profile.get('test_year'):
+            leap_info = " (Leap)" if profile.get('is_leap_year') else ""
+            days_info = f" ({profile.get('days_in_month', 'N/A')}d)" if profile.get('days_in_month') else ""
+            month_info = f" [{profile['test_year']}-{profile['test_month']:02d}{leap_info}{days_info}]"
+        
         all_failures.append({
-            'profile_name': profile['profile_name'],
+            'profile_name': profile['profile_name'] + month_info,
             'period': profile['period'],
             'kind': profile['kind'],
             'function': profile['function'],
@@ -675,7 +832,7 @@ def create_failed_profiles_detail_chart(results):
             'failure_type': 'Validation Failed',
             'expected_value': profile.get('expected_value', 'N/A'),
             'actual_value': profile.get('actual_value', 'N/A'),
-            'error': f"Expected: {profile.get('expected_value', 'N/A')}, Got: {profile.get('actual_value', 'N/A')}"
+            'error': f"Expected: {profile.get('expected_value', 'N/A')}, Got: {profile.get('actual_value', 'N/A')}{month_info}"
         })
     
     # Add creation failures
@@ -1017,7 +1174,13 @@ if __name__ == "__main__":
     print("VALIDATION FAILURES SUMMARY")
     print(f"{'='*60}")
     for profile in results['validation_failed']:
-        print(f"Profile {profile['profile_name']} failed validation: expected {profile['expected_value']}, got {profile['actual_value']}")
+        month_info = ""
+        if profile.get('test_month') and profile.get('test_year'):
+            leap_info = " (Leap Year)" if profile.get('is_leap_year') else ""
+            days_info = f" ({profile.get('days_in_month', 'N/A')} days)" if profile.get('days_in_month') else ""
+            month_info = f" for {profile['test_year']}-{profile['test_month']:02d}{leap_info}{days_info}"
+        
+        print(f"Profile {profile['profile_name']} failed validation{month_info}: expected {profile['expected_value']}, got {profile['actual_value']}")
     
     # Export results to CSV for further analysis
     export_results_to_csv(results)
