@@ -1,2 +1,2 @@
-- [] osterit pocet dni na zklade mesiacu
-    - [] rok prestupny
+- [X] osterit pocet dni na zklade mesiacu
+    - [X] rok prestupny
