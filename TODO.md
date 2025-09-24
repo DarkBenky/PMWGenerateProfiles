@@ -1,2 +1,6 @@
 - [X] osterit pocet dni na zklade mesiacu
     - [X] rok prestupny
+    - [X] dynamic quantal
+    - [ ] diff profiles for each period
+        - [ ] pila -> for day
+    - [ ] diff zones

@@ -9,11 +9,13 @@ import json
 import warnings
 import urllib3
 
+DIRECTORY_ID = 1357551
+
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
-api_url = "https://timeseries-dev/profile-manager/api/tss/v2/timeseriesmetadata" #Post
+api_url = "https://edm-lin-pg.dev.apps/profile-manager/api/tss/v2/timeseriesmetadata" #Post
 
 xsrf_token = "CfDJ8A7t2EOL0ipDrGiCgGk5RMb-9FQYIb3mJBhuiWdLw9oAeOuDdchx9JaS8tgwMA96g5fpuZIXQecFaH5DPhGDYrv1gRCnY3tjJWvGMVJ9pEizlXsCesJsNuaejfYJ9ebiUUGUE2maxTj8_hvEBZO-VZwEnKaNzgNAYUmyGDwudKAQgkVA1GiOT8z83uIPTLHp8Q"
 
@@ -53,7 +55,6 @@ def creteProfileComputed():
     cookie = input("Enter cookies: ")
     update_auth_cookies(cookie)
 
-    # Data structures to store results
     results = {
         'creation_errors': [],  # Profiles that failed to create
         'validation_passed': [],  # Profiles that passed validation
@@ -79,22 +80,21 @@ def creteProfileComputed():
                             "TimeZone": "CET"
                         },
                         "Type": "Computed",
-                        "DirectoryId": 1351527,
+                        "DirectoryId": DIRECTORY_ID,
                         "Comment": "",
                         "Expression": f"{func}(\\one, {pP})",
                         "Kind": kind,
                         "Policy": "00000000-0000-0000-0000-000000000000"
                     }
                     
-                    # Complete headers matching the working frontend request
                     headers = {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json, text/plain, */*',
                         'Accept-Encoding': 'gzip, deflate, br, zstd',
                         'Accept-Language': 'en-US,en;q=0.9',
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                        'Origin': 'https://timeseries-dev',
-                        'Referer': 'https://timeseries-dev/profile-manager/dockboard',
+                        'Origin': 'https://edm-lin-pg.dev.apps',
+                        'Referer': 'https://edm-lin-pg.dev.apps/profile-manager/dockboard',
                         'Sec-Fetch-Dest': 'empty',
                         'Sec-Fetch-Mode': 'cors',
                         'Sec-Fetch-Site': 'same-origin',
@@ -132,12 +132,79 @@ def creteProfileComputed():
                             "Function": func,
                             "FunctionPeriod": pP
                         })
+                    
+                    if func in ["min", "max", "avg"]:
+                        # test min max avg with "/pila" profile 
+                        # at 0h -> 1
+                        # at 1h -> 2
+                        # at 2h -> 3
+                        # ..........
+                        # at 23h -> 24
 
-    # Return results for further analysis
+                        data = {
+                            "Name": f"computed_{period}_{kind}_{pP}_{func}_pila",
+                            "Period": {
+                                "Period": period,
+                                "Offset": "00:00:00",
+                                "TimeZone": "CET"
+                            },
+                            "Type": "Computed",
+                            "DirectoryId": DIRECTORY_ID,
+                            "Comment": "",
+                            "Expression": f"{func}(\\pila, {pP})",
+                            "Kind": kind,
+                            "Policy": "00000000-0000-0000-0000-000000000000"
+                        }
+                        
+                        headers = {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json, text/plain, */*',
+                            'Accept-Encoding': 'gzip, deflate, br, zstd',
+                            'Accept-Language': 'en-US,en;q=0.9',
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                            'Origin': 'https://edm-lin-pg.dev.apps',
+                            'Referer': 'https://edm-lin-pg.dev.apps/profile-manager/dockboard',
+                            'Sec-Fetch-Dest': 'empty',
+                            'Sec-Fetch-Mode': 'cors',
+                            'Sec-Fetch-Site': 'same-origin',
+                            'mshdo-language': 'en',
+                            'x-xsrf-token': xsrf_token
+                        }
+                        
+                        response = requests.post(
+                            api_url, 
+                            headers=headers, 
+                            cookies=auth_cookies,
+                            data=json.dumps(data), 
+                            verify=False
+                        )
+                        print(f"Status: {response.status_code} for {period}_{kind}")
+                        if response.status_code != 200:
+                            print(f"Error response: {response.text}")
+                            results['creation_errors'].append({
+                                'profile_name': f"computed_{period}_{kind}_{pP}_{func}_pila",
+                                'period': period,
+                                'kind': kind,
+                                'function': func,
+                                'function_period': pP,
+                                'status_code': response.status_code,
+                                'error': response.text
+                            })
+                        else:
+                            profile_id = response.json().get("Id")
+                            print(f"Created profile ID: {profile_id}")
+                            
+                            # Get profile data
+                            get_profile_data(profile_id, f"computed_{period}_{kind}_{pP}_{func}_pila", results, period, {
+                                "Period": period,
+                                "Kind": kind,
+                                "Function": func,
+                                "FunctionPeriod": pP
+                            })
+
     return results
 
 def generateDatesForPeriod():
-    """Generate Unix timestamps for the first day of each month in 2023 and 2024 (leap year)."""
     datesUnix = []
     isLeap = []
     endDate = []
@@ -177,9 +244,15 @@ def generateDatesForPeriod():
     return datesUnix, isLeap, endDate, months, years
 
 
-def get_expected_value_for_month(function, function_period, month, year, is_leap_year):
-    """Calculate expected value for a specific month and year based on function and function period."""
-    
+def get_expected_value_for_month(function, function_period, month, year, is_leap_year, profile_name=None):
+    if 'pila' in profile_name:
+        if function == 'min':
+            return 1
+        elif function == 'max':
+            return 24
+        elif function == 'avg':
+            return 12.5  # Average of 1 to 24
+
     # Get number of days in the month
     days_in_month = calendar.monthrange(year, month)[1]
     
@@ -230,7 +303,7 @@ def get_profile_data(profile_id, profile_name, results, period, profile_data):
     passed_months = []  # Store details of months that passed
     
     for dStart, leap, dEnd, month, year in zip(dates, isLeapYear, endDate, months, years):
-        url_get_profile_data = f"https://timeseries-dev/profile-manager/api/tss/TimeSeriesData/?id={profile_id}&unixDateFrom={dStart}&unixDateTo={dEnd}&includeNulls=true"
+        url_get_profile_data = f"https://edm-lin-pg.dev.apps/profile-manager/api/tss/TimeSeriesData/?id={profile_id}&unixDateFrom={dStart}&unixDateTo={dEnd}&includeNulls=true"
         
         headers = {
             'Accept': 'application/json',
@@ -238,7 +311,7 @@ def get_profile_data(profile_id, profile_name, results, period, profile_data):
             'Accept-Language': 'en-US,en;q=0.9',
             'Content-Type': 'application/json',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-            'Referer': 'https://timeseries-dev/profile-manager/dockboard',
+            'Referer': 'https://edm-lin-pg.dev.apps/profile-manager/dockboard',
             'Sec-Fetch-Dest': 'empty',
             'Sec-Fetch-Mode': 'cors',
             'Sec-Fetch-Site': 'same-origin',
@@ -273,7 +346,8 @@ def get_profile_data(profile_id, profile_name, results, period, profile_data):
                     profile_data["FunctionPeriod"], 
                     month, 
                     year, 
-                    leap
+                    leap,
+                    profile_name=profile_name
                 )
                 
                 validation_passed = False
@@ -348,12 +422,10 @@ def get_profile_data(profile_id, profile_name, results, period, profile_data):
             print(f"Exception while getting data for profile {profile_id} for {year}-{month:02d}: {str(e)}")
             return
     
-    # If we reach here, all months passed validation
-    # Add all individual month results to validation_passed
+
     for month_result in passed_months:
         results['validation_passed'].append(month_result)
     
-    # Also create a summary result with sample values from the first month
     if passed_months:
         first_month = passed_months[0]
         summary_result = {
@@ -376,7 +448,6 @@ def get_profile_data(profile_id, profile_name, results, period, profile_data):
         
         results['validation_passed'].append(summary_result)
         
-        # Add to supported periods using the summary
         if period not in results['supported_periods']:
             results['supported_periods'][period] = []
         results['supported_periods'][period].append(summary_result)
@@ -435,10 +506,8 @@ def export_results_to_csv(results, filename="profile_results.csv"):
         
         writer.writeheader()
         
-        # Write validation passed profiles
         for profile in results['validation_passed']:
             row = {}
-            # Only include fields that are in fieldnames
             for field in fieldnames:
                 if field in profile:
                     row[field] = profile[field]
@@ -449,10 +518,8 @@ def export_results_to_csv(results, filename="profile_results.csv"):
                 row['error'] = ''
             writer.writerow(row)
         
-        # Write validation failed profiles
         for profile in results['validation_failed']:
             row = {}
-            # Only include fields that are in fieldnames
             for field in fieldnames:
                 if field in profile:
                     row[field] = profile[field]
@@ -463,7 +530,6 @@ def export_results_to_csv(results, filename="profile_results.csv"):
                 row['error'] = profile.get('error', '')
             writer.writerow(row)
         
-        # Write creation errors
         for error in results['creation_errors']:
             writer.writerow({
                 'profile_name': error['profile_name'],
@@ -485,7 +551,6 @@ def export_results_to_csv(results, filename="profile_results.csv"):
                 'all_months_passed': ''
             })
         
-        # Write data retrieval errors
         for error in results['data_retrieval_errors']:
             writer.writerow({
                 'profile_name': error['profile_name'],
@@ -510,9 +575,6 @@ def export_results_to_csv(results, filename="profile_results.csv"):
     print(f"Results exported to {filename}")
 
 def create_sankey_diagram(results):
-    """Create a Sankey diagram showing the flow from periods to validation results."""
-    
-    # Prepare data for Sankey diagram
     labels = []
     source = []
     target = []
@@ -1134,11 +1196,9 @@ def create_profile_status_sunburst(results):
     return fig
 
 def visualize_results(results):
-    """Create and display all visualizations for the results."""
     
     print("Creating visualizations...")
     
-    # Create original visualizations
     sankey_fig = create_sankey_diagram(results)
     sankey_fig.show()
     
@@ -1154,7 +1214,6 @@ def visualize_results(results):
     dashboard_fig = create_comprehensive_dashboard(results)
     dashboard_fig.show()
     
-    # Create new detailed failure visualizations
     print("Creating detailed failure analysis...")
     
     failed_details_fig = create_failed_profiles_detail_chart(results)
@@ -1183,7 +1242,6 @@ def visualize_results(results):
 if __name__ == "__main__":
     results = creteProfileComputed()
 
-    # Print all results where validation failed
     print(f"\n{'='*60}")
     print("VALIDATION FAILURES SUMMARY")
     print(f"{'='*60}")
@@ -1196,9 +1254,6 @@ if __name__ == "__main__":
         
         print(f"Profile {profile['profile_name']} failed validation{month_info}: expected {profile['expected_value']}, got {profile['actual_value']}")
     
-    # Export results to CSV for further analysis
     export_results_to_csv(results)
     
-    # Create and display visualizations
     visualizations = visualize_results(results)
-   
