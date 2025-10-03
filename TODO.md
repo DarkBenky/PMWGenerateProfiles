@@ -5,3 +5,4 @@
         - [X] pila
     - [ ] check not only for first value
     - [ ] diff zones
+    - [X] Parallel requests

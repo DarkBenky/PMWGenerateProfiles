@@ -8,8 +8,11 @@ import requests
 import json
 import warnings
 import urllib3
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from typing import Dict, List, Any
 
-DIRECTORY_ID = 1357551
+DIRECTORY_ID = 1368333
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -49,22 +52,153 @@ def update_xsrf_token(token):
     global xsrf_token
     xsrf_token = token
 
-def creteProfileComputed():
+class ThreadSafeResults:
+    """Thread-safe results collector for parallel execution."""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.data = {
+            'creation_errors': [],  # Profiles that failed to create
+            'validation_passed': [],  # Profiles that passed validation
+            'validation_failed': [],  # Profiles that failed validation
+            'data_retrieval_errors': [],  # Profiles that failed data retrieval
+            'supported_periods': {},  # Periods that work with their profiles
+            'period_summary': {}  # Summary count per period
+        }
+    
+    def add_creation_error(self, error_data):
+        with self.lock:
+            self.data['creation_errors'].append(error_data)
+    
+    def add_validation_passed(self, validation_data):
+        with self.lock:
+            self.data['validation_passed'].append(validation_data)
+    
+    def add_validation_failed(self, validation_data):
+        with self.lock:
+            self.data['validation_failed'].append(validation_data)
+    
+    def add_data_retrieval_error(self, error_data):
+        with self.lock:
+            self.data['data_retrieval_errors'].append(error_data)
+    
+    def update_supported_periods(self, period, profile_data):
+        with self.lock:
+            if period not in self.data['supported_periods']:
+                self.data['supported_periods'][period] = []
+            self.data['supported_periods'][period].append(profile_data)
+    
+    def update_period_summary(self, period, count):
+        with self.lock:
+            if period not in self.data['period_summary']:
+                self.data['period_summary'][period] = 0
+            self.data['period_summary'][period] += count
+    
+    def get_results(self):
+        with self.lock:
+            return self.data.copy()
+
+def create_profile_worker(profile_config, results_collector):
+    """Worker function to create a single profile."""
+    try:
+        period, kind, pP, func, is_pila = profile_config
+        
+        profile_name = f"computed_{period}_{kind}_{pP}_{func}"
+        if is_pila:
+            profile_name += "_pila"
+        
+        expression = f"{func}(\\{'pila' if is_pila else 'one'}, {pP})"
+        
+        data = {
+            "Name": profile_name,
+            "Period": {
+                "Period": period,
+                "Offset": "00:00:00",
+                "TimeZone": "CET"
+            },
+            "Type": "Computed",
+            "DirectoryId": DIRECTORY_ID,
+            "Comment": "",
+            "Expression": expression,
+            "Kind": kind,
+            "Policy": "00000000-0000-0000-0000-000000000000"
+        }
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Encoding': 'gzip, deflate, br, zstd',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+            'Origin': 'https://edm-lin-pg.dev.apps',
+            'Referer': 'https://edm-lin-pg.dev.apps/profile-manager/dockboard',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-origin',
+            'mshdo-language': 'en',
+            'x-xsrf-token': xsrf_token
+        }
+        
+        response = requests.post(
+            api_url, 
+            headers=headers, 
+            cookies=auth_cookies,
+            data=json.dumps(data), 
+            verify=False
+        )
+        
+        print(f"Status: {response.status_code} for {profile_name}")
+        
+        if response.status_code != 200:
+            print(f"Error response: {response.text}")
+            results_collector.add_creation_error({
+                'profile_name': profile_name,
+                'period': period,
+                'kind': kind,
+                'function': func,
+                'function_period': pP,
+                'is_pila': is_pila,
+                'status_code': response.status_code,
+                'error': response.text
+            })
+            return None
+        else:
+            profile_id = response.json().get("Id")
+            print(f"Created profile ID: {profile_id}")
+            return {
+                'profile_id': profile_id,
+                'profile_name': profile_name,
+                'period': period,
+                'kind': kind,
+                'function': func,
+                'function_period': pP,
+                'is_pila': is_pila
+            }
+    except Exception as e:
+        print(f"Exception in create_profile_worker: {e}")
+        results_collector.add_creation_error({
+            'profile_name': f"computed_{period}_{kind}_{pP}_{func}{'_pila' if is_pila else ''}",
+            'period': period,
+            'kind': kind,
+            'function': func,
+            'function_period': pP,
+            'is_pila': is_pila,
+            'status_code': 'Exception',
+            'error': str(e)
+        })
+        return None
+
+def creteProfileComputed(max_workers=10):
     t = input("Enter token: ")
     update_xsrf_token(t)
     cookie = input("Enter cookies: ")
     update_auth_cookies(cookie)
 
-    results = {
-        'creation_errors': [],  # Profiles that failed to create
-        'validation_passed': [],  # Profiles that passed validation
-        'validation_failed': [],  # Profiles that failed validation
-        'data_retrieval_errors': [],  # Profiles that failed data retrieval
-        'supported_periods': {},  # Periods that work with their profiles
-        'period_summary': {}  # Summary count per period
-    }
+    results_collector = ThreadSafeResults()
     
+    # Generate all profile configurations
+    profile_configs = []
     periods = ["P1Y", "P1M", "P3M", "P6M", "P1W", "PT1H", "PT15M", "PT5M", "PT1M", "PT10M", "PT3M", "PT1S", "P1D"]
+    
     for period in periods:
         kinds = ["Quantitative", "Continuous"]
         for kind in kinds:
@@ -72,137 +206,69 @@ def creteProfileComputed():
             for pP in profilePeriods:
                 functions = ["sum", "avg", "min", "max"]
                 for func in functions:
-                    data = {
-                        "Name": f"computed_{period}_{kind}_{pP}_{func}",
-                        "Period": {
-                            "Period": period,
-                            "Offset": "00:00:00",
-                            "TimeZone": "CET"
-                        },
-                        "Type": "Computed",
-                        "DirectoryId": DIRECTORY_ID,
-                        "Comment": "",
-                        "Expression": f"{func}(\\one, {pP})",
-                        "Kind": kind,
-                        "Policy": "00000000-0000-0000-0000-000000000000"
-                    }
+                    # Regular profile
+                    profile_configs.append((period, kind, pP, func, False))
                     
-                    headers = {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json, text/plain, */*',
-                        'Accept-Encoding': 'gzip, deflate, br, zstd',
-                        'Accept-Language': 'en-US,en;q=0.9',
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                        'Origin': 'https://edm-lin-pg.dev.apps',
-                        'Referer': 'https://edm-lin-pg.dev.apps/profile-manager/dockboard',
-                        'Sec-Fetch-Dest': 'empty',
-                        'Sec-Fetch-Mode': 'cors',
-                        'Sec-Fetch-Site': 'same-origin',
-                        'mshdo-language': 'en',
-                        'x-xsrf-token': xsrf_token
-                    }
-                    
-                    response = requests.post(
-                        api_url, 
-                        headers=headers, 
-                        cookies=auth_cookies,
-                        data=json.dumps(data), 
-                        verify=False
-                    )
-                    print(f"Status: {response.status_code} for {period}_{kind}")
-                    if response.status_code != 200:
-                        print(f"Error response: {response.text}")
-                        results['creation_errors'].append({
-                            'profile_name': f"computed_{period}_{kind}_{pP}_{func}",
-                            'period': period,
-                            'kind': kind,
-                            'function': func,
-                            'function_period': pP,
-                            'status_code': response.status_code,
-                            'error': response.text
-                        })
-                    else:
-                        profile_id = response.json().get("Id")
-                        print(f"Created profile ID: {profile_id}")
-                        
-                        # Get profile data
-                        get_profile_data(profile_id, f"computed_{period}_{kind}_{pP}_{func}", results, period, {
-                            "Period": period,
-                            "Kind": kind,
-                            "Function": func,
-                            "FunctionPeriod": pP
-                        })
-                    
+                    # Pila profile for min, max, avg
                     if func in ["min", "max", "avg"]:
-                        # test min max avg with "/pila" profile 
-                        # at 0h -> 1
-                        # at 1h -> 2
-                        # at 2h -> 3
-                        # ..........
-                        # at 23h -> 24
-
-                        data = {
-                            "Name": f"computed_{period}_{kind}_{pP}_{func}_pila",
-                            "Period": {
-                                "Period": period,
-                                "Offset": "00:00:00",
-                                "TimeZone": "CET"
-                            },
-                            "Type": "Computed",
-                            "DirectoryId": DIRECTORY_ID,
-                            "Comment": "",
-                            "Expression": f"{func}(\\pila, {pP})",
-                            "Kind": kind,
-                            "Policy": "00000000-0000-0000-0000-000000000000"
-                        }
-                        
-                        headers = {
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json, text/plain, */*',
-                            'Accept-Encoding': 'gzip, deflate, br, zstd',
-                            'Accept-Language': 'en-US,en;q=0.9',
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                            'Origin': 'https://edm-lin-pg.dev.apps',
-                            'Referer': 'https://edm-lin-pg.dev.apps/profile-manager/dockboard',
-                            'Sec-Fetch-Dest': 'empty',
-                            'Sec-Fetch-Mode': 'cors',
-                            'Sec-Fetch-Site': 'same-origin',
-                            'mshdo-language': 'en',
-                            'x-xsrf-token': xsrf_token
-                        }
-                        
-                        response = requests.post(
-                            api_url, 
-                            headers=headers, 
-                            cookies=auth_cookies,
-                            data=json.dumps(data), 
-                            verify=False
-                        )
-                        print(f"Status: {response.status_code} for {period}_{kind}")
-                        if response.status_code != 200:
-                            print(f"Error response: {response.text}")
-                            results['creation_errors'].append({
-                                'profile_name': f"computed_{period}_{kind}_{pP}_{func}_pila",
-                                'period': period,
-                                'kind': kind,
-                                'function': func,
-                                'function_period': pP,
-                                'status_code': response.status_code,
-                                'error': response.text
-                            })
-                        else:
-                            profile_id = response.json().get("Id")
-                            print(f"Created profile ID: {profile_id}")
-                            
-                            # Get profile data
-                            get_profile_data(profile_id, f"computed_{period}_{kind}_{pP}_{func}_pila", results, period, {
-                                "Period": period,
-                                "Kind": kind,
-                                "Function": func,
-                                "FunctionPeriod": pP
-                            })
-
-    return results
+                        profile_configs.append((period, kind, pP, func, True))
+    
+    print(f"Total profiles to create: {len(profile_configs)}")
+    
+    # Phase 1: Create profiles in parallel
+    print("Phase 1: Creating profiles in parallel...")
+    created_profiles = []
+    creation_start_time = datetime.datetime.now()
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all profile creation tasks
+        future_to_config = {
+            executor.submit(create_profile_worker, config, results_collector): config 
+            for config in profile_configs
+        }
+        
+        # Collect results as they complete
+        for future in as_completed(future_to_config):
+            config = future_to_config[future]
+            try:
+                result = future.result()
+                if result:
+                    created_profiles.append(result)
+                    print(f"✓ Created profile: {result['profile_name']}")
+                else:
+                    print(f"✗ Failed to create profile: {config[0]}_{config[1]}_{config[2]}_{config[3]}{'_pila' if config[4] else ''}")
+            except Exception as e:
+                print(f"✗ Exception creating profile {config}: {e}")
+    
+    print(f"Successfully created {len(created_profiles)} profiles")
+    
+    # Phase 2: Retrieve data for created profiles in parallel
+    print("Phase 2: Retrieving data for created profiles in parallel...")
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all data retrieval tasks
+        future_to_profile = {
+            executor.submit(data_retrieval_worker, profile_info, results_collector): profile_info
+            for profile_info in created_profiles
+        }
+        
+        # Collect results as they complete
+        completed_count = 0
+        for future in as_completed(future_to_profile):
+            profile_info = future_to_profile[future]
+            try:
+                result = future.result()
+                completed_count += 1
+                if result:
+                    print(f"✓ ({completed_count}/{len(created_profiles)}) Retrieved data for: {profile_info['profile_name']}")
+                else:
+                    print(f"✗ ({completed_count}/{len(created_profiles)}) Failed to retrieve data for: {profile_info['profile_name']}")
+            except Exception as e:
+                completed_count += 1
+                print(f"✗ ({completed_count}/{len(created_profiles)}) Exception retrieving data for {profile_info['profile_name']}: {e}")
+    
+    print("All parallel operations completed!")
+    return results_collector.get_results()
 
 def generateDatesForPeriod():
     datesUnix = []
@@ -295,6 +361,138 @@ def get_expected_value_for_month(function, function_period, month, year, is_leap
     
     return None
 
+
+def data_retrieval_worker(profile_info, results_collector):
+    """Worker function to retrieve data for a single profile."""
+    try:
+        profile_id = profile_info['profile_id']
+        profile_name = profile_info['profile_name']
+        period = profile_info['period']
+        profile_data = {
+            "Period": period,
+            "Kind": profile_info['kind'],
+            "Function": profile_info['function'],
+            "FunctionPeriod": profile_info['function_period']
+        }
+        
+        dates, isLeapYear, endDate, months, years = generateDatesForPeriod()
+        passed_months = []
+        
+        for dStart, leap, dEnd, month, year in zip(dates, isLeapYear, endDate, months, years):
+            url_get_profile_data = f"https://edm-lin-pg.dev.apps/profile-manager/api/tss/TimeSeriesData/?id={profile_id}&unixDateFrom={dStart}&unixDateTo={dEnd}&includeNulls=true"
+            
+            headers = {
+                'Accept': 'application/json',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+                'Referer': 'https://edm-lin-pg.dev.apps/profile-manager/dockboard',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-Ch-Ua': '"Not;A=Brand";v="99", "Brave";v="139", "Chromium";v="139"',
+                'Sec-Ch-Ua-Mobile': '?0',
+                'Sec-Ch-Ua-Platform': '"Windows"',
+                'Sec-Gpc': '1',
+                'mshdo-language': 'en',
+                'priority': 'u=1, i'
+            }
+            
+            try:
+                response = requests.get(
+                    url_get_profile_data,
+                    headers=headers,
+                    cookies=auth_cookies,
+                    verify=False
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    if not data:
+                        print(f"No data returned for profile {profile_id} for {year}-{month:02d}")
+                        continue
+                    
+                    first_value = data[0].get("Value")
+                    expected_value = get_expected_value_for_month(
+                        profile_data["Function"], 
+                        profile_data["FunctionPeriod"], 
+                        month, 
+                        year, 
+                        leap,
+                        profile_name=profile_name
+                    )
+                    
+                    if expected_value is not None:
+                        if first_value == expected_value:
+                            passed_months.append({
+                                'month': month,
+                                'year': year,
+                                'expected': expected_value,
+                                'actual': first_value,
+                                'is_leap_year': leap,
+                                'days_in_month': calendar.monthrange(year, month)[1]
+                            })
+                            results_collector.add_validation_passed({
+                                'profile_name': profile_name,
+                                'expected_value': expected_value,
+                                'actual_value': first_value,
+                                'test_month': month,
+                                'test_year': year,
+                                'is_leap_year': leap,
+                                'days_in_month': calendar.monthrange(year, month)[1]
+                            })
+                        else:
+                            results_collector.add_validation_failed({
+                                'profile_name': profile_name,
+                                'expected_value': expected_value,
+                                'actual_value': first_value,
+                                'test_month': month,
+                                'test_year': year,
+                                'is_leap_year': leap,
+                                'days_in_month': calendar.monthrange(year, month)[1]
+                            })
+                else:
+                    results_collector.add_data_retrieval_error({
+                        'profile_name': profile_name,
+                        'profile_id': profile_id,
+                        'test_month': month,
+                        'test_year': year,
+                        'status_code': response.status_code,
+                        'error': response.text
+                    })
+                    
+            except Exception as e:
+                results_collector.add_data_retrieval_error({
+                    'profile_name': profile_name,
+                    'profile_id': profile_id,
+                    'test_month': month,
+                    'test_year': year,
+                    'status_code': 'Exception',
+                    'error': str(e)
+                })
+        
+        # Update supported periods if we have passed months
+        if passed_months:
+            results_collector.update_supported_periods(period, {
+                'profile_name': profile_name,
+                'passed_months': passed_months,
+                'total_months': len(passed_months)
+            })
+            results_collector.update_period_summary(period, len(passed_months))
+            
+        return True
+        
+    except Exception as e:
+        print(f"Exception in data_retrieval_worker for {profile_info.get('profile_name', 'unknown')}: {e}")
+        results_collector.add_data_retrieval_error({
+            'profile_name': profile_info.get('profile_name', 'unknown'),
+            'profile_id': profile_info.get('profile_id', 'unknown'),
+            'status_code': 'Exception',
+            'error': str(e)
+        })
+        return False
 
 def get_profile_data(profile_id, profile_name, results, period, profile_data):
     """Fetch data from a created profile and store results in the results dictionary."""
@@ -1240,7 +1438,15 @@ def visualize_results(results):
     }
 
 if __name__ == "__main__":
-    results = creteProfileComputed()
+    try:
+        max_workers_input = input("Enter maximum number of parallel workers (default 10): ")
+        max_workers = int(max_workers_input) if max_workers_input.strip() else 10
+    except ValueError:
+        max_workers = 10
+        print("Invalid input, using default 10 workers")
+    
+    print(f"Using {max_workers} parallel workers for processing...")
+    results = creteProfileComputed(max_workers)
 
     print(f"\n{'='*60}")
     print("VALIDATION FAILURES SUMMARY")
@@ -1254,6 +1460,8 @@ if __name__ == "__main__":
         
         print(f"Profile {profile['profile_name']} failed validation{month_info}: expected {profile['expected_value']}, got {profile['actual_value']}")
     
-    export_results_to_csv(results)
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    export_results_to_csv(results, f"profile_results_{current_time}.csv")
     
     visualizations = visualize_results(results)
