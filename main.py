@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from typing import Dict, List, Any
 
-DIRECTORY_ID = 1368333
+DIRECTORY_ID = 1369537
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -228,19 +228,23 @@ def creteProfileComputed(max_workers=10):
         }
         
         # Collect results as they complete
+        completed_creation = 0
         for future in as_completed(future_to_config):
             config = future_to_config[future]
+            completed_creation += 1
             try:
                 result = future.result()
                 if result:
                     created_profiles.append(result)
-                    print(f"✓ Created profile: {result['profile_name']}")
+                    print(f"✓ ({completed_creation}/{len(profile_configs)}) Created profile: {result['profile_name']}")
                 else:
-                    print(f"✗ Failed to create profile: {config[0]}_{config[1]}_{config[2]}_{config[3]}{'_pila' if config[4] else ''}")
+                    print(f"✗ ({completed_creation}/{len(profile_configs)}) Failed to create profile: {config[0]}_{config[1]}_{config[2]}_{config[3]}{'_pila' if config[4] else ''}")
             except Exception as e:
-                print(f"✗ Exception creating profile {config}: {e}")
+                print(f"✗ ({completed_creation}/{len(profile_configs)}) Exception creating profile {config}: {e}")
     
-    print(f"Successfully created {len(created_profiles)} profiles")
+    creation_time = datetime.datetime.now() - creation_start_time
+    print(f"Profile creation completed in {creation_time.total_seconds():.2f} seconds")
+    print(f"Successfully created {len(created_profiles)} out of {len(profile_configs)} profiles")
     
     # Phase 2: Retrieve data for created profiles in parallel
     print("Phase 2: Retrieving data for created profiles in parallel...")
@@ -1437,6 +1441,69 @@ def visualize_results(results):
         'profile_sunburst': sunburst_fig
     }
 
+def filterOutFail(results, failure_type='validation_failed'):
+    fieldnames = ['profile_name', 'profile_id', 'period', 'kind', 'function', 'function_period', 
+                     'actual_value', 'expected_value', 'validation_passed', 'status', 'error', 
+                     'test_month', 'test_year', 'is_leap_year', 'days_in_month', 'months_tested', 'all_months_passed']
+    
+    periodGroups = {}
+    kindGroups = {}
+    functionGroups = {}
+    functionPeriodGroups = {}
+
+
+    for profile in results['validation_failed']:
+        # Group by period
+        period = profile.get('period', 'Unknown')
+        if period not in periodGroups:
+            periodGroups[period] = []
+        periodGroups[period].append({field: profile.get(field, '') for field in fieldnames})
+        
+        # Group by kind
+        kind = profile.get('kind', 'Unknown')
+        if kind not in kindGroups:
+            kindGroups[kind] = []
+        kindGroups[kind].append({field: profile.get(field, '') for field in fieldnames})
+        
+        # Group by function
+        function = profile.get('function', 'Unknown')
+        if function not in functionGroups:
+            functionGroups[function] = []
+        functionGroups[function].append({field: profile.get(field, '') for field in fieldnames})
+        
+        # Group by function period
+        func_period = profile.get('function_period', 'Unknown')
+        if func_period not in functionPeriodGroups:
+            functionPeriodGroups[func_period] = []
+        functionPeriodGroups[func_period].append({field: profile.get(field, '') for field in fieldnames})
+    
+    # most common type of erroring profile
+    most_common_period = max(periodGroups.items(), key=lambda x: len(x[1])) if periodGroups else ('N/A', [])
+    most_common_kind = max(kindGroups.items(), key=lambda x: len(x[1])) if kindGroups else ('N/A', [])
+    most_common_function = max(functionGroups.items(), key=lambda x: len(x[1])) if functionGroups else ('N/A', [])
+    most_common_function_period = max(functionPeriodGroups.items(), key=lambda x: len(x[1])) if functionPeriodGroups else ('N/A', [])
+
+    print(f"\nMost common failing period: {most_common_period[0]} with {len(most_common_period[1])} failures")
+    print(f"Most common failing kind: {most_common_kind[0]} with {len(most_common_kind[1])} failures")
+    print(f"Most common failing function: {most_common_function[0]} with {len   (most_common_function[1])} failures")
+    print(f"Most common failing function period: {most_common_function_period[0]} with {len(most_common_function_period[1])} failures")
+
+    return {
+        'by_period': periodGroups,
+        'by_kind': kindGroups,
+        'by_function': functionGroups,
+        'by_function_period': functionPeriodGroups,
+        'most_common': {
+            'period': most_common_period,
+            'kind': most_common_kind,
+            'function': most_common_function,
+            'function_period': most_common_function_period
+        }
+    }
+
+        
+    
+
 if __name__ == "__main__":
     try:
         max_workers_input = input("Enter maximum number of parallel workers (default 10): ")
@@ -1460,8 +1527,13 @@ if __name__ == "__main__":
         
         print(f"Profile {profile['profile_name']} failed validation{month_info}: expected {profile['expected_value']}, got {profile['actual_value']}")
     
-    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     export_results_to_csv(results, f"profile_results_{current_time}.csv")
+    fails = filterOutFail(results, 'validation_failed')
+
+    # save the filtered failures to a JSON file for further analysis
+    with open(f"filtered_failures_{current_time}.json", 'w', encoding='utf-8') as f:
+        json.dump(fails, f, ensure_ascii=False, indent=4)
     
     visualizations = visualize_results(results)
