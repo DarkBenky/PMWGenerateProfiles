@@ -8,11 +8,13 @@ import requests
 import json
 import warnings
 import urllib3
+import os
+import csv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from typing import Dict, List, Any
 
-DIRECTORY_ID = 1369537
+DIRECTORY_ID = 1369538
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -1442,6 +1444,23 @@ def visualize_results(results):
     }
 
 def filterOutFail(results, failure_type='validation_failed'):
+    print(f"Analyzing {len(results['validation_failed'])} failed validation profiles...")
+    
+    if not results['validation_failed']:
+        print("No validation failures to analyze!")
+        return {
+            'by_period': {},
+            'by_kind': {},
+            'by_function': {},
+            'by_function_period': {},
+            'most_common': {
+                'period': ('N/A', []),
+                'kind': ('N/A', []),
+                'function': ('N/A', []),
+                'function_period': ('N/A', [])
+            }
+        }
+    
     fieldnames = ['profile_name', 'profile_id', 'period', 'kind', 'function', 'function_period', 
                      'actual_value', 'expected_value', 'validation_passed', 'status', 'error', 
                      'test_month', 'test_year', 'is_leap_year', 'days_in_month', 'months_tested', 'all_months_passed']
@@ -1450,7 +1469,6 @@ def filterOutFail(results, failure_type='validation_failed'):
     kindGroups = {}
     functionGroups = {}
     functionPeriodGroups = {}
-
 
     for profile in results['validation_failed']:
         # Group by period
@@ -1483,10 +1501,14 @@ def filterOutFail(results, failure_type='validation_failed'):
     most_common_function = max(functionGroups.items(), key=lambda x: len(x[1])) if functionGroups else ('N/A', [])
     most_common_function_period = max(functionPeriodGroups.items(), key=lambda x: len(x[1])) if functionPeriodGroups else ('N/A', [])
 
-    print(f"\nMost common failing period: {most_common_period[0]} with {len(most_common_period[1])} failures")
+    print(f"\n{'='*60}")
+    print("FAILURE ANALYSIS SUMMARY")
+    print(f"{'='*60}")
+    print(f"Most common failing period: {most_common_period[0]} with {len(most_common_period[1])} failures")
     print(f"Most common failing kind: {most_common_kind[0]} with {len(most_common_kind[1])} failures")
-    print(f"Most common failing function: {most_common_function[0]} with {len   (most_common_function[1])} failures")
+    print(f"Most common failing function: {most_common_function[0]} with {len(most_common_function[1])} failures")
     print(f"Most common failing function period: {most_common_function_period[0]} with {len(most_common_function_period[1])} failures")
+    print(f"{'='*60}")
 
     return {
         'by_period': periodGroups,
@@ -1530,10 +1552,20 @@ if __name__ == "__main__":
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     export_results_to_csv(results, f"profile_results_{current_time}.csv")
+    
+    print(f"\n{'='*60}")
+    print("ANALYZING FAILURE PATTERNS...")
+    print(f"{'='*60}")
     fails = filterOutFail(results, 'validation_failed')
 
     # save the filtered failures to a JSON file for further analysis
-    with open(f"filtered_failures_{current_time}.json", 'w', encoding='utf-8') as f:
-        json.dump(fails, f, ensure_ascii=False, indent=4)
+    json_filename = f"filtered_failures_{current_time}.json"
+    print(f"\nSaving failure analysis to {json_filename}...")
+    try:
+        with open(json_filename, 'w', encoding='utf-8') as f:
+            json.dump(fails, f, ensure_ascii=False, indent=4)
+        print(f"Current directory: {os.getcwd()}")
+    except Exception as e:
+        print(f"Error saving JSON file: {e}")
     
     visualizations = visualize_results(results)
