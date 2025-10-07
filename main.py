@@ -8,19 +8,29 @@ import requests
 import json
 import warnings
 import urllib3
-import os
-import csv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from typing import Dict, List, Any
 
-DIRECTORY_ID = 1369538
+DIRECTORY_ID = 1367049
 
-# Disable SSL warnings
+def parse_profile_name(profile_name):
+    try:
+        parts = profile_name.split('_')
+        if len(parts) >= 5:
+            period = parts[1]
+            kind = parts[2]
+            function_period = parts[3]
+            function = parts[4]
+            return period, kind, function, function_period
+    except Exception as e:
+        print(f"Error parsing profile name '{profile_name}': {e}")
+    return 'Unknown', 'Unknown', 'Unknown', 'Unknown'
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
-api_url = "https://edm-lin-pg.dev.apps/profile-manager/api/tss/v2/timeseriesmetadata" #Post
+api_url = "https://edm-lin-pg.dev.apps/profile-manager/api/tss/v2/timeseriesmetadata"
 
 xsrf_token = "CfDJ8A7t2EOL0ipDrGiCgGk5RMb-9FQYIb3mJBhuiWdLw9oAeOuDdchx9JaS8tgwMA96g5fpuZIXQecFaH5DPhGDYrv1gRCnY3tjJWvGMVJ9pEizlXsCesJsNuaejfYJ9ebiUUGUE2maxTj8_hvEBZO-VZwEnKaNzgNAYUmyGDwudKAQgkVA1GiOT8z83uIPTLHp8Q"
 
@@ -35,7 +45,6 @@ auth_cookies = {
 }
 
 def parse_cookie_string(cookie_string):
-    """Parse a cookie string and return a dictionary of cookie key-value pairs."""
     cookies = {}
     for cookie in cookie_string.split('; '):
         if '=' in cookie:
@@ -44,27 +53,24 @@ def parse_cookie_string(cookie_string):
     return cookies
 
 def update_auth_cookies(cookie_string):
-    """Update the global auth_cookies with values from the provided cookie string."""
     global auth_cookies
     new_cookies = parse_cookie_string(cookie_string)
     auth_cookies.update(new_cookies)
 
 def update_xsrf_token(token):
-    """Update the global xsrf_token with the provided token."""
     global xsrf_token
     xsrf_token = token
 
 class ThreadSafeResults:
-    """Thread-safe results collector for parallel execution."""
     def __init__(self):
         self.lock = threading.Lock()
         self.data = {
-            'creation_errors': [],  # Profiles that failed to create
-            'validation_passed': [],  # Profiles that passed validation
-            'validation_failed': [],  # Profiles that failed validation
-            'data_retrieval_errors': [],  # Profiles that failed data retrieval
-            'supported_periods': {},  # Periods that work with their profiles
-            'period_summary': {}  # Summary count per period
+            'creation_errors': [],
+            'validation_passed': [],
+            'validation_failed': [],
+            'data_retrieval_errors': [],
+            'supported_periods': {},
+            'period_summary': {}
         }
     
     def add_creation_error(self, error_data):
@@ -100,7 +106,6 @@ class ThreadSafeResults:
             return self.data.copy()
 
 def create_profile_worker(profile_config, results_collector):
-    """Worker function to create a single profile."""
     try:
         period, kind, pP, func, is_pila = profile_config
         
@@ -197,7 +202,6 @@ def creteProfileComputed(max_workers=10):
 
     results_collector = ThreadSafeResults()
     
-    # Generate all profile configurations
     profile_configs = []
     periods = ["P1Y", "P1M", "P3M", "P6M", "P1W", "PT1H", "PT15M", "PT5M", "PT1M", "PT10M", "PT3M", "PT1S", "P1D"]
     
@@ -208,28 +212,22 @@ def creteProfileComputed(max_workers=10):
             for pP in profilePeriods:
                 functions = ["sum", "avg", "min", "max"]
                 for func in functions:
-                    # Regular profile
                     profile_configs.append((period, kind, pP, func, False))
                     
-                    # Pila profile for min, max, avg
                     if func in ["min", "max", "avg"]:
                         profile_configs.append((period, kind, pP, func, True))
     
     print(f"Total profiles to create: {len(profile_configs)}")
     
-    # Phase 1: Create profiles in parallel
     print("Phase 1: Creating profiles in parallel...")
     created_profiles = []
     creation_start_time = datetime.datetime.now()
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all profile creation tasks
         future_to_config = {
             executor.submit(create_profile_worker, config, results_collector): config 
             for config in profile_configs
         }
-        
-        # Collect results as they complete
         completed_creation = 0
         for future in as_completed(future_to_config):
             config = future_to_config[future]
@@ -248,17 +246,13 @@ def creteProfileComputed(max_workers=10):
     print(f"Profile creation completed in {creation_time.total_seconds():.2f} seconds")
     print(f"Successfully created {len(created_profiles)} out of {len(profile_configs)} profiles")
     
-    # Phase 2: Retrieve data for created profiles in parallel
     print("Phase 2: Retrieving data for created profiles in parallel...")
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all data retrieval tasks
         future_to_profile = {
             executor.submit(data_retrieval_worker, profile_info, results_collector): profile_info
             for profile_info in created_profiles
         }
-        
-        # Collect results as they complete
         completed_count = 0
         for future in as_completed(future_to_profile):
             profile_info = future_to_profile[future]
@@ -283,7 +277,6 @@ def generateDatesForPeriod():
     months = []
     years = []
     
-    # Generate dates for 2023 (non-leap year)
     for month in range(1, 13):
         data = f"1.{month}.2023 00:00:00"
         start_timestamp = int(datetime.datetime.strptime(data, "%d.%m.%Y %H:%M:%S").timestamp())
@@ -298,7 +291,6 @@ def generateDatesForPeriod():
         months.append(month)
         years.append(2023)
     
-    # Generate dates for 2024 (leap year)
     for month in range(1, 13):
         data = f"1.{month}.2024 00:00:00"
         start_timestamp = int(datetime.datetime.strptime(data, "%d.%m.%Y %H:%M:%S").timestamp())
@@ -325,22 +317,20 @@ def get_expected_value_for_month(function, function_period, month, year, is_leap
         elif function == 'avg':
             return 12.5  # Average of 1 to 24
 
-    # Get number of days in the month
     days_in_month = calendar.monthrange(year, month)[1]
     
     if function == "sum":
-        if function_period == "H":  # Sum over hour
-            return 1  # Each hour contains value 1
-        elif function_period == "PD":  # Sum over day  
-            return 24  # 24 hours per day
-        elif function_period == "PW":  # Sum over week
-            return 168  # 7 days * 24 hours = 168 hours
-        elif function_period == "PE":  # Sum over epoch (same as week)
+        if function_period == "H":
+            return 1
+        elif function_period == "PD":
+            return 24
+        elif function_period == "PW":
             return 168
-        elif function_period == "PM":  # Sum over month
-            return days_in_month * 24  # Actual days in month * 24 hours
-        elif function_period == "PQ":  # Sum over quarter
-            # For quarters, we need to consider which quarter this month belongs to
+        elif function_period == "PE":
+            return 168
+        elif function_period == "PM":
+            return days_in_month * 24
+        elif function_period == "PQ":
             quarter_months = {
                 1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12]
             }
@@ -350,26 +340,24 @@ def get_expected_value_for_month(function, function_period, month, year, is_leap
                     quarter = q
                     break
             
-            # Calculate total days in the quarter
             total_days = 0
             for q_month in quarter_months[quarter]:
                 total_days += calendar.monthrange(year, q_month)[1]
             
-            return total_days * 24  # Total days in quarter * 24 hours
-        elif function_period == "PY":  # Sum over year
+            return total_days * 24
+        elif function_period == "PY":
             if is_leap_year:
-                return 366 * 24  # 366 days * 24 hours for leap year
+                return 366 * 24
             else:
-                return 365 * 24  # 365 days * 24 hours for normal year
+                return 365 * 24
     
     elif function in ["avg", "min", "max"]:
-        return 1  # Average, min, max should be 1 since source data is constant 1
+        return 1
     
     return None
 
 
 def data_retrieval_worker(profile_info, results_collector):
-    """Worker function to retrieve data for a single profile."""
     try:
         profile_id = profile_info['profile_id']
         profile_name = profile_info['profile_name']
@@ -479,7 +467,6 @@ def data_retrieval_worker(profile_info, results_collector):
                     'error': str(e)
                 })
         
-        # Update supported periods if we have passed months
         if passed_months:
             results_collector.update_supported_periods(period, {
                 'profile_name': profile_name,
@@ -501,7 +488,6 @@ def data_retrieval_worker(profile_info, results_collector):
         return False
 
 def get_profile_data(profile_id, profile_name, results, period, profile_data):
-    """Fetch data from a created profile and store results in the results dictionary."""
     dates, isLeapYear, endDate, months, years = generateDatesForPeriod()
     
     passed_months = []  # Store details of months that passed
@@ -809,7 +795,8 @@ def create_sankey_diagram(results):
     # Add flows for failed validations, creation errors, etc.
     period_failures = {}
     for profile in results['validation_failed']:
-        period = profile['period']
+        profile_name = profile.get('profile_name', '')
+        period, _, _, _ = parse_profile_name(profile_name)
         if period not in period_failures:
             period_failures[period] = 0
         period_failures[period] += 1
@@ -824,7 +811,11 @@ def create_sankey_diagram(results):
     # Add creation errors by period
     creation_failures = {}
     for error in results['creation_errors']:
-        period = error['period']
+        # Use the stored period if available, otherwise parse from profile_name
+        period = error.get('period', '')
+        if not period:
+            profile_name = error.get('profile_name', '')
+            period, _, _, _ = parse_profile_name(profile_name)
         if period not in creation_failures:
             creation_failures[period] = 0
         creation_failures[period] += 1
@@ -891,15 +882,23 @@ def create_success_rate_chart(results):
     
     # Get all periods from failed results
     for profile in results['validation_failed']:
-        all_periods.add(profile['period'])
+        profile_name = profile.get('profile_name', '')
+        period, _, _, _ = parse_profile_name(profile_name)
+        all_periods.add(period)
     
     for error in results['creation_errors']:
-        all_periods.add(error['period'])
+        period = error.get('period', '')
+        if not period:
+            profile_name = error.get('profile_name', '')
+            period, _, _, _ = parse_profile_name(profile_name)
+        all_periods.add(period)
     
     for period in sorted(all_periods):
         successful = len(results['supported_periods'].get(period, []))
-        failed_validation = sum(1 for p in results['validation_failed'] if p['period'] == period)
-        failed_creation = sum(1 for e in results['creation_errors'] if e['period'] == period)
+        failed_validation = sum(1 for p in results['validation_failed'] 
+                              if parse_profile_name(p.get('profile_name', ''))[0] == period)
+        failed_creation = sum(1 for e in results['creation_errors'] 
+                            if (e.get('period') or parse_profile_name(e.get('profile_name', ''))[0]) == period)
         failed_data = sum(1 for e in results['data_retrieval_errors'] if e.get('period') == period)
         
         total = successful + failed_validation + failed_creation + failed_data
@@ -1019,14 +1018,22 @@ def create_comprehensive_dashboard(results):
     for period in results['supported_periods'].keys():
         all_periods.add(period)
     for profile in results['validation_failed']:
-        all_periods.add(profile['period'])
+        profile_name = profile.get('profile_name', '')
+        period, _, _, _ = parse_profile_name(profile_name)
+        all_periods.add(period)
     for error in results['creation_errors']:
-        all_periods.add(error['period'])
+        period = error.get('period', '')
+        if not period:
+            profile_name = error.get('profile_name', '')
+            period, _, _, _ = parse_profile_name(profile_name)
+        all_periods.add(period)
     
     for period in sorted(all_periods):
         successful = len(results['supported_periods'].get(period, []))
-        failed_validation = sum(1 for p in results['validation_failed'] if p['period'] == period)
-        failed_creation = sum(1 for e in results['creation_errors'] if e['period'] == period)
+        failed_validation = sum(1 for p in results['validation_failed'] 
+                              if parse_profile_name(p.get('profile_name', ''))[0] == period)
+        failed_creation = sum(1 for e in results['creation_errors'] 
+                            if (e.get('period') or parse_profile_name(e.get('profile_name', ''))[0]) == period)
         
         total = successful + failed_validation + failed_creation
         if total > 0:
@@ -1103,12 +1110,15 @@ def create_failed_profiles_detail_chart(results):
             days_info = f" ({profile.get('days_in_month', 'N/A')}d)" if profile.get('days_in_month') else ""
             month_info = f" [{profile['test_year']}-{profile['test_month']:02d}{leap_info}{days_info}]"
         
+        profile_name = profile.get('profile_name', '')
+        period, kind, function, function_period = parse_profile_name(profile_name)
+        
         all_failures.append({
-            'profile_name': profile['profile_name'] + month_info,
-            'period': profile['period'],
-            'kind': profile['kind'],
-            'function': profile['function'],
-            'function_period': profile['function_period'],
+            'profile_name': profile_name + month_info,
+            'period': period,
+            'kind': kind,
+            'function': function,
+            'function_period': function_period,
             'failure_type': 'Validation Failed',
             'expected_value': profile.get('expected_value', 'N/A'),
             'actual_value': profile.get('actual_value', 'N/A'),
@@ -1117,16 +1127,26 @@ def create_failed_profiles_detail_chart(results):
     
     # Add creation failures
     for error in results['creation_errors']:
+        profile_name = error.get('profile_name', '')
+        period = error.get('period', '')
+        kind = error.get('kind', '')
+        function = error.get('function', '')
+        function_period = error.get('function_period', '')
+        
+        # If fields are missing, parse from profile name
+        if not all([period, kind, function, function_period]):
+            period, kind, function, function_period = parse_profile_name(profile_name)
+        
         all_failures.append({
-            'profile_name': error['profile_name'],
-            'period': error['period'],
-            'kind': error['kind'],
-            'function': error['function'],
-            'function_period': error['function_period'],
+            'profile_name': profile_name,
+            'period': period,
+            'kind': kind,
+            'function': function,
+            'function_period': function_period,
             'failure_type': 'Creation Failed',
             'expected_value': 'N/A',
             'actual_value': 'N/A',
-            'error': f"Status {error['status_code']}: {error['error'][:100]}..."
+            'error': f"Status {error.get('status_code', 'N/A')}: {str(error.get('error', ''))[:100]}..."
         })
     
     # Add data retrieval failures
@@ -1218,22 +1238,31 @@ def create_failure_heatmap(results):
     # Initialize matrix
     for period in periods:
         for function in functions:
-            # Count successful profiles
+            # Count successful profiles (these should have period and function fields)
             successful = 0
             for profile in results['validation_passed']:
-                if profile['period'] == period and profile['function'] == function:
+                profile_name = profile.get('profile_name', '')
+                p_period, _, p_function, _ = parse_profile_name(profile_name)
+                if p_period == period and p_function == function:
                     successful += 1
             
             # Count failed profiles
             failed = 0
             for profile in results['validation_failed']:
-                if profile['period'] == period and profile['function'] == function:
+                profile_name = profile.get('profile_name', '')
+                p_period, _, p_function, _ = parse_profile_name(profile_name)
+                if p_period == period and p_function == function:
                     failed += 1
             
             # Count creation errors
             creation_failed = 0
             for error in results['creation_errors']:
-                if error['period'] == period and error['function'] == function:
+                error_period = error.get('period', '')
+                error_function = error.get('function', '')
+                if not error_period or not error_function:
+                    profile_name = error.get('profile_name', '')
+                    error_period, _, error_function, _ = parse_profile_name(profile_name)
+                if error_period == period and error_function == function:
                     creation_failed += 1
             
             total = successful + failed + creation_failed
@@ -1304,46 +1333,52 @@ def create_profile_status_sunburst(results):
     
     # Add successful profiles
     for profile in results['validation_passed']:
+        profile_name = profile.get('profile_name', '')
+        period, _, function, _ = parse_profile_name(profile_name)
+        
         sunburst_data.append({
-            'ids': f"Success-{profile['period']}-{profile['function']}-{profile['profile_name']}",
-            'labels': profile['profile_name'],
-            'parents': f"Success-{profile['period']}-{profile['function']}",
+            'ids': f"Success-{period}-{function}-{profile_name}",
+            'labels': profile_name,
+            'parents': f"Success-{period}-{function}",
             'values': 1
         })
         
         sunburst_data.append({
-            'ids': f"Success-{profile['period']}-{profile['function']}",
-            'labels': profile['function'],
-            'parents': f"Success-{profile['period']}",
+            'ids': f"Success-{period}-{function}",
+            'labels': function,
+            'parents': f"Success-{period}",
             'values': 1
         })
         
         sunburst_data.append({
-            'ids': f"Success-{profile['period']}",
-            'labels': profile['period'],
+            'ids': f"Success-{period}",
+            'labels': period,
             'parents': "Success",
             'values': 1
         })
     
     # Add failed validation profiles
     for profile in results['validation_failed']:
+        profile_name = profile.get('profile_name', '')
+        period, _, function, _ = parse_profile_name(profile_name)
+        
         sunburst_data.append({
-            'ids': f"Failed-{profile['period']}-{profile['function']}-{profile['profile_name']}",
-            'labels': profile['profile_name'],
-            'parents': f"Failed-{profile['period']}-{profile['function']}",
+            'ids': f"Failed-{period}-{function}-{profile_name}",
+            'labels': profile_name,
+            'parents': f"Failed-{period}-{function}",
             'values': 1
         })
         
         sunburst_data.append({
-            'ids': f"Failed-{profile['period']}-{profile['function']}",
-            'labels': profile['function'],
-            'parents': f"Failed-{profile['period']}",
+            'ids': f"Failed-{period}-{function}",
+            'labels': function,
+            'parents': f"Failed-{period}",
             'values': 1
         })
         
         sunburst_data.append({
-            'ids': f"Failed-{profile['period']}",
-            'labels': profile['period'],
+            'ids': f"Failed-{period}",
+            'labels': period,
             'parents': "Failed",
             'values': 1
         })
@@ -1444,23 +1479,6 @@ def visualize_results(results):
     }
 
 def filterOutFail(results, failure_type='validation_failed'):
-    print(f"Analyzing {len(results['validation_failed'])} failed validation profiles...")
-    
-    if not results['validation_failed']:
-        print("No validation failures to analyze!")
-        return {
-            'by_period': {},
-            'by_kind': {},
-            'by_function': {},
-            'by_function_period': {},
-            'most_common': {
-                'period': ('N/A', []),
-                'kind': ('N/A', []),
-                'function': ('N/A', []),
-                'function_period': ('N/A', [])
-            }
-        }
-    
     fieldnames = ['profile_name', 'profile_id', 'period', 'kind', 'function', 'function_period', 
                      'actual_value', 'expected_value', 'validation_passed', 'status', 'error', 
                      'test_month', 'test_year', 'is_leap_year', 'days_in_month', 'months_tested', 'all_months_passed']
@@ -1470,30 +1488,40 @@ def filterOutFail(results, failure_type='validation_failed'):
     functionGroups = {}
     functionPeriodGroups = {}
 
+    print(f"Processing {len(results['validation_failed'])} failed validation profiles...")
+
     for profile in results['validation_failed']:
+        profile_name = profile.get('profile_name', '')
+        
+        # Parse the profile name to extract missing fields
+        period, kind, function, function_period = parse_profile_name(profile_name)
+        
+        # Create enhanced profile data with parsed fields
+        enhanced_profile = {field: profile.get(field, '') for field in fieldnames}
+        enhanced_profile['period'] = period
+        enhanced_profile['kind'] = kind
+        enhanced_profile['function'] = function
+        enhanced_profile['function_period'] = function_period
+        
         # Group by period
-        period = profile.get('period', 'Unknown')
         if period not in periodGroups:
             periodGroups[period] = []
-        periodGroups[period].append({field: profile.get(field, '') for field in fieldnames})
+        periodGroups[period].append(enhanced_profile)
         
         # Group by kind
-        kind = profile.get('kind', 'Unknown')
         if kind not in kindGroups:
             kindGroups[kind] = []
-        kindGroups[kind].append({field: profile.get(field, '') for field in fieldnames})
+        kindGroups[kind].append(enhanced_profile)
         
         # Group by function
-        function = profile.get('function', 'Unknown')
         if function not in functionGroups:
             functionGroups[function] = []
-        functionGroups[function].append({field: profile.get(field, '') for field in fieldnames})
+        functionGroups[function].append(enhanced_profile)
         
         # Group by function period
-        func_period = profile.get('function_period', 'Unknown')
-        if func_period not in functionPeriodGroups:
-            functionPeriodGroups[func_period] = []
-        functionPeriodGroups[func_period].append({field: profile.get(field, '') for field in fieldnames})
+        if function_period not in functionPeriodGroups:
+            functionPeriodGroups[function_period] = []
+        functionPeriodGroups[function_period].append(enhanced_profile)
     
     # most common type of erroring profile
     most_common_period = max(periodGroups.items(), key=lambda x: len(x[1])) if periodGroups else ('N/A', [])
@@ -1501,14 +1529,18 @@ def filterOutFail(results, failure_type='validation_failed'):
     most_common_function = max(functionGroups.items(), key=lambda x: len(x[1])) if functionGroups else ('N/A', [])
     most_common_function_period = max(functionPeriodGroups.items(), key=lambda x: len(x[1])) if functionPeriodGroups else ('N/A', [])
 
-    print(f"\n{'='*60}")
+    print(f"\n{'='*50}")
     print("FAILURE ANALYSIS SUMMARY")
-    print(f"{'='*60}")
-    print(f"Most common failing period: {most_common_period[0]} with {len(most_common_period[1])} failures")
+    print(f"{'='*50}")
+    print(f"Total failed profiles: {sum(len(group) for group in periodGroups.values())}")
+    print(f"Periods with failures: {list(periodGroups.keys())}")
+    print(f"Kinds with failures: {list(kindGroups.keys())}")
+    print(f"Functions with failures: {list(functionGroups.keys())}")
+    print(f"Function periods with failures: {list(functionPeriodGroups.keys())}")
+    print(f"\nMost common failing period: {most_common_period[0]} with {len(most_common_period[1])} failures")
     print(f"Most common failing kind: {most_common_kind[0]} with {len(most_common_kind[1])} failures")
     print(f"Most common failing function: {most_common_function[0]} with {len(most_common_function[1])} failures")
     print(f"Most common failing function period: {most_common_function_period[0]} with {len(most_common_function_period[1])} failures")
-    print(f"{'='*60}")
 
     return {
         'by_period': periodGroups,
@@ -1552,20 +1584,12 @@ if __name__ == "__main__":
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     export_results_to_csv(results, f"profile_results_{current_time}.csv")
-    
-    print(f"\n{'='*60}")
-    print("ANALYZING FAILURE PATTERNS...")
-    print(f"{'='*60}")
     fails = filterOutFail(results, 'validation_failed')
 
     # save the filtered failures to a JSON file for further analysis
     json_filename = f"filtered_failures_{current_time}.json"
-    print(f"\nSaving failure analysis to {json_filename}...")
-    try:
-        with open(json_filename, 'w', encoding='utf-8') as f:
-            json.dump(fails, f, ensure_ascii=False, indent=4)
-        print(f"Current directory: {os.getcwd()}")
-    except Exception as e:
-        print(f"Error saving JSON file: {e}")
+    with open(json_filename, 'w', encoding='utf-8') as f:
+        json.dump(fails, f, ensure_ascii=False, indent=4)
+    print(f"Filtered failure analysis saved to: {json_filename}")
     
     visualizations = visualize_results(results)
