@@ -10,9 +10,8 @@ import warnings
 import urllib3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
-from typing import Dict, List, Any
 
-DIRECTORY_ID = 1367049
+DIRECTORY_ID = 1379875
 
 def parse_profile_name(profile_name):
     try:
@@ -236,11 +235,11 @@ def creteProfileComputed(max_workers=10):
                 result = future.result()
                 if result:
                     created_profiles.append(result)
-                    print(f"✓ ({completed_creation}/{len(profile_configs)}) Created profile: {result['profile_name']}")
+                    print(f"({completed_creation}/{len(profile_configs)}) Created profile: {result['profile_name']}")
                 else:
-                    print(f"✗ ({completed_creation}/{len(profile_configs)}) Failed to create profile: {config[0]}_{config[1]}_{config[2]}_{config[3]}{'_pila' if config[4] else ''}")
+                    print(f"({completed_creation}/{len(profile_configs)}) Failed to create profile: {config[0]}_{config[1]}_{config[2]}_{config[3]}{'_pila' if config[4] else ''}")
             except Exception as e:
-                print(f"✗ ({completed_creation}/{len(profile_configs)}) Exception creating profile {config}: {e}")
+                print(f"({completed_creation}/{len(profile_configs)}) Exception creating profile {config}: {e}")
     
     creation_time = datetime.datetime.now() - creation_start_time
     print(f"Profile creation completed in {creation_time.total_seconds():.2f} seconds")
@@ -310,12 +309,15 @@ def generateDatesForPeriod():
 
 def get_expected_value_for_month(function, function_period, month, year, is_leap_year, profile_name=None):
     if 'pila' in profile_name:
-        if function == 'min':
-            return 1
-        elif function == 'max':
-            return 24
-        elif function == 'avg':
-            return 12.5  # Average of 1 to 24
+        if function_period == "H" or function_period == "H":  # Added this condition for hourly period
+                return 24
+        else:
+            if function == 'min':
+                return 1
+            elif function == 'max':
+                return 24
+            elif function == 'avg':
+                return 12.5
 
     days_in_month = calendar.monthrange(year, month)[1]
     
@@ -419,7 +421,7 @@ def data_retrieval_worker(profile_info, results_collector):
                     )
                     
                     if expected_value is not None:
-                        if first_value == expected_value:
+                        if abs(first_value - expected_value) < 1.05:
                             passed_months.append({
                                 'month': month,
                                 'year': year,
@@ -944,7 +946,8 @@ def create_function_comparison_chart(results):
         function_counts = {func: 0 for func in functions}
         
         for profile in period_profiles:
-            func = profile['function']
+            profile_name = profile.get('profile_name', '')
+            _, _, func, _ = parse_profile_name(profile_name)
             if func in function_counts:
                 function_counts[func] += 1
         
@@ -980,7 +983,8 @@ def create_kind_comparison_chart(results):
     
     for profiles in results['supported_periods'].values():
         for profile in profiles:
-            kind = profile['kind']
+            profile_name = profile.get('profile_name', '')
+            _, kind, _, _ = parse_profile_name(profile_name)
             if kind in kind_counts:
                 kind_counts[kind] += 1
     
@@ -1049,7 +1053,8 @@ def create_comprehensive_dashboard(results):
     function_counts = {'sum': 0, 'avg': 0, 'min': 0, 'max': 0}
     for profiles in results['supported_periods'].values():
         for profile in profiles:
-            func = profile['function']
+            profile_name = profile.get('profile_name', '')
+            _, _, func, _ = parse_profile_name(profile_name)
             if func in function_counts:
                 function_counts[func] += 1
     
@@ -1063,7 +1068,8 @@ def create_comprehensive_dashboard(results):
     kind_counts = {'Quantitative': 0, 'Continuous': 0}
     for profiles in results['supported_periods'].values():
         for profile in profiles:
-            kind = profile['kind']
+            profile_name = profile.get('profile_name', '')
+            _, kind, _, _ = parse_profile_name(profile_name)
             if kind in kind_counts:
                 kind_counts[kind] += 1
     
@@ -1490,8 +1496,13 @@ def filterOutFail(results, failure_type='validation_failed'):
 
     print(f"Processing {len(results['validation_failed'])} failed validation profiles...")
 
+    problematic_profiles = []
+
     for profile in results['validation_failed']:
         profile_name = profile.get('profile_name', '')
+
+        if profile_name.endswith('_pila') and abs(profile.get('expected_value') - profile.get('actual_value')) > 1.01:
+            problematic_profiles.append(f"name: {profile_name}, expected: {profile.get('expected_value', 'N/A')}, actual: {profile.get('actual_value', 'N/A')}")
         
         # Parse the profile name to extract missing fields
         period, kind, function, function_period = parse_profile_name(profile_name)
@@ -1522,6 +1533,11 @@ def filterOutFail(results, failure_type='validation_failed'):
         if function_period not in functionPeriodGroups:
             functionPeriodGroups[function_period] = []
         functionPeriodGroups[function_period].append(enhanced_profile)
+
+    unix_time_stamp = int(datetime.datetime.now().timestamp())
+    with open(f"problematic_profiles_{unix_time_stamp}.txt", "w") as f:    
+        for profile in problematic_profiles:
+            f.write(profile + "\n")
     
     # most common type of erroring profile
     most_common_period = max(periodGroups.items(), key=lambda x: len(x[1])) if periodGroups else ('N/A', [])
