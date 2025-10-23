@@ -11,7 +11,7 @@ import urllib3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
-DIRECTORY_ID = 1379875
+DIRECTORY_ID = 50262
 
 def parse_profile_name(profile_name):
     try:
@@ -29,7 +29,7 @@ def parse_profile_name(profile_name):
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
-api_url = "https://edm-lin-pg.dev.apps/profile-manager/api/tss/v2/timeseriesmetadata"
+api_url = "https://xen-epro.dev.apps/profile-manager/api/tss/v2/timeseriesmetadata"
 
 xsrf_token = "CfDJ8A7t2EOL0ipDrGiCgGk5RMb-9FQYIb3mJBhuiWdLw9oAeOuDdchx9JaS8tgwMA96g5fpuZIXQecFaH5DPhGDYrv1gRCnY3tjJWvGMVJ9pEizlXsCesJsNuaejfYJ9ebiUUGUE2maxTj8_hvEBZO-VZwEnKaNzgNAYUmyGDwudKAQgkVA1GiOT8z83uIPTLHp8Q"
 
@@ -1484,6 +1484,119 @@ def visualize_results(results):
         'profile_sunburst': sunburst_fig
     }
 
+def filterOutFailExcludeMismatchedPeriods(results, failure_type='validation_failed'):
+    """
+    Filter failed profiles but exclude those where profile period is higher than function period.
+    For example: excludes P3M (quarterly) profiles with PM (monthly) function periods.
+    """
+    fieldnames = ['profile_name', 'profile_id', 'period', 'kind', 'function', 'function_period', 
+                     'actual_value', 'expected_value', 'validation_passed', 'status', 'error', 
+                     'test_month', 'test_year', 'is_leap_year', 'days_in_month', 'months_tested', 'all_months_passed']
+    
+    # Period hierarchy (higher index = longer period)
+    period_hierarchy = {
+        'PT1S': 0, 'PT1M': 1, 'PT3M': 2, 'PT5M': 3, 'PT10M': 4, 'PT15M': 5, 'PT1H': 6,
+        'H': 6, 'PD': 7, 'P1D': 7, 'PW': 8, 'P1W': 8, 'PE': 8,
+        'PM': 9, 'P1M': 9, 'PQ': 10, 'P3M': 10, 'P6M': 11, 'PY': 12, 'P1Y': 12
+    }
+    
+    periodGroups = {}
+    kindGroups = {}
+    functionGroups = {}
+    functionPeriodGroups = {}
+
+    print(f"Processing {len(results['validation_failed'])} failed validation profiles...")
+    print("Excluding profiles where profile period > function period...")
+
+    problematic_profiles = []
+    excluded_count = 0
+
+    for profile in results['validation_failed']:
+        profile_name = profile.get('profile_name', '')
+        
+        # Parse the profile name to extract missing fields
+        period, kind, function, function_period = parse_profile_name(profile_name)
+        
+        # Check if profile period is higher than function period
+        profile_period_level = period_hierarchy.get(period, -1)
+        function_period_level = period_hierarchy.get(function_period, -1)
+        
+        # Skip profiles where profile period > function period
+        if profile_period_level > function_period_level:
+            excluded_count += 1
+            continue
+
+        if profile_name.endswith('_pila') and abs(profile.get('expected_value') - profile.get('actual_value')) > 1.01:
+            problematic_profiles.append(f"name: {profile_name}, expected: {profile.get('expected_value', 'N/A')}, actual: {profile.get('actual_value', 'N/A')}")
+        
+        # Create enhanced profile data with parsed fields
+        enhanced_profile = {field: profile.get(field, '') for field in fieldnames}
+        enhanced_profile['period'] = period
+        enhanced_profile['kind'] = kind
+        enhanced_profile['function'] = function
+        enhanced_profile['function_period'] = function_period
+        
+        # Group by period
+        if period not in periodGroups:
+            periodGroups[period] = []
+        periodGroups[period].append(enhanced_profile)
+        
+        # Group by kind
+        if kind not in kindGroups:
+            kindGroups[kind] = []
+        kindGroups[kind].append(enhanced_profile)
+        
+        # Group by function
+        if function not in functionGroups:
+            functionGroups[function] = []
+        functionGroups[function].append(enhanced_profile)
+        
+        # Group by function period
+        if function_period not in functionPeriodGroups:
+            functionPeriodGroups[function_period] = []
+        functionPeriodGroups[function_period].append(enhanced_profile)
+
+    unix_time_stamp = int(datetime.datetime.now().timestamp())
+    with open(f"problematic_profiles_filtered_{unix_time_stamp}.txt", "w") as f:    
+        for profile in problematic_profiles:
+            f.write(profile + "\n")
+    
+    print(f"Excluded {excluded_count} profiles with mismatched period hierarchy")
+    
+    # most common type of erroring profile
+    most_common_period = max(periodGroups.items(), key=lambda x: len(x[1])) if periodGroups else ('N/A', [])
+    most_common_kind = max(kindGroups.items(), key=lambda x: len(x[1])) if kindGroups else ('N/A', [])
+    most_common_function = max(functionGroups.items(), key=lambda x: len(x[1])) if functionGroups else ('N/A', [])
+    most_common_function_period = max(functionPeriodGroups.items(), key=lambda x: len(x[1])) if functionPeriodGroups else ('N/A', [])
+
+    print(f"\n{'='*50}")
+    print("FILTERED FAILURE ANALYSIS SUMMARY")
+    print(f"{'='*50}")
+    print(f"Total failed profiles (after filtering): {sum(len(group) for group in periodGroups.values())}")
+    print(f"Periods with failures: {list(periodGroups.keys())}")
+    print(f"Kinds with failures: {list(kindGroups.keys())}")
+    print(f"Functions with failures: {list(functionGroups.keys())}")
+    print(f"Function periods with failures: {list(functionPeriodGroups.keys())}")
+    print(f"\nMost common failing period: {most_common_period[0]} with {len(most_common_period[1])} failures")
+    print(f"Most common failing kind: {most_common_kind[0]} with {len(most_common_kind[1])} failures")
+    print(f"Most common failing function: {most_common_function[0]} with {len(most_common_function[1])} failures")
+    print(f"Most common failing function period: {most_common_function_period[0]} with {len(most_common_function_period[1])} failures")
+
+    return {
+        'by_period': periodGroups,
+        'by_kind': kindGroups,
+        'by_function': functionGroups,
+        'by_function_period': functionPeriodGroups,
+        'most_common': {
+            'period': most_common_period,
+            'kind': most_common_kind,
+            'function': most_common_function,
+            'function_period': most_common_function_period
+        },
+        'excluded_count': excluded_count
+    }
+
+
 def filterOutFail(results, failure_type='validation_failed'):
     fieldnames = ['profile_name', 'profile_id', 'period', 'kind', 'function', 'function_period', 
                      'actual_value', 'expected_value', 'validation_passed', 'status', 'error', 
@@ -1600,12 +1713,19 @@ if __name__ == "__main__":
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     export_results_to_csv(results, f"profile_results_{current_time}.csv")
+    
+    # Original filter (includes all failures)
     fails = filterOutFail(results, 'validation_failed')
-
-    # save the filtered failures to a JSON file for further analysis
     json_filename = f"filtered_failures_{current_time}.json"
     with open(json_filename, 'w', encoding='utf-8') as f:
         json.dump(fails, f, ensure_ascii=False, indent=4)
     print(f"Filtered failure analysis saved to: {json_filename}")
+    
+    # New filter (excludes profiles where profile period > function period)
+    fails_filtered = filterOutFailExcludeMismatchedPeriods(results, 'validation_failed')
+    json_filename_filtered = f"filtered_failures_excluding_mismatched_{current_time}.json"
+    with open(json_filename_filtered, 'w', encoding='utf-8') as f:
+        json.dump(fails_filtered, f, ensure_ascii=False, indent=4)
+    print(f"Filtered failure analysis (excluding mismatched periods) saved to: {json_filename_filtered}")
     
     visualizations = visualize_results(results)
