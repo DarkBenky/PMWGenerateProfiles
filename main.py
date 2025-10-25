@@ -1,6 +1,7 @@
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import os
 import pandas as pd
 import datetime
 import calendar
@@ -11,7 +12,7 @@ import urllib3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
-DIRECTORY_ID = 50262
+DIRECTORY_ID = 1391113
 
 def parse_profile_name(profile_name):
     try:
@@ -29,7 +30,7 @@ def parse_profile_name(profile_name):
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
-api_url = "https://xen-epro.dev.apps/profile-manager/api/tss/v2/timeseriesmetadata"
+api_url = "https://edm-lin-pg.dev.apps/profile-manager/api/tss/v2/timeseriesmetadata"
 
 xsrf_token = "CfDJ8A7t2EOL0ipDrGiCgGk5RMb-9FQYIb3mJBhuiWdLw9oAeOuDdchx9JaS8tgwMA96g5fpuZIXQecFaH5DPhGDYrv1gRCnY3tjJWvGMVJ9pEizlXsCesJsNuaejfYJ9ebiUUGUE2maxTj8_hvEBZO-VZwEnKaNzgNAYUmyGDwudKAQgkVA1GiOT8z83uIPTLHp8Q"
 
@@ -1694,13 +1695,24 @@ if __name__ == "__main__":
     except ValueError:
         max_workers = 10
         print("Invalid input, using default 10 workers")
+
+
+    output_dir = ''
+    try: 
+        version = input("Enter version:")
+        # crete folder for versioned results
+        if version.strip():
+            os.makedirs(f"results_{version}", exist_ok=True)
+            os.chdir(f"results_{version}")
+            output_dir = f"results_{version}"
+    except Exception as e:
+        print(f"Error creating versioned results folder: {e}")
+
     
     print(f"Using {max_workers} parallel workers for processing...")
     results = creteProfileComputed(max_workers)
-
-    print(f"\n{'='*60}")
-    print("VALIDATION FAILURES SUMMARY")
-    print(f"{'='*60}")
+    
+    print("\nValidation Failures Summary:")
     for profile in results['validation_failed']:
         month_info = ""
         if profile.get('test_month') and profile.get('test_year'):
@@ -1712,7 +1724,7 @@ if __name__ == "__main__":
     
     current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    export_results_to_csv(results, f"profile_results_{current_time}.csv")
+    export_results_to_csv(results, f"{output_dir}/profile_results_{current_time}.csv")
     
     # Original filter (includes all failures)
     fails = filterOutFail(results, 'validation_failed')
@@ -1723,7 +1735,7 @@ if __name__ == "__main__":
     
     # New filter (excludes profiles where profile period > function period)
     fails_filtered = filterOutFailExcludeMismatchedPeriods(results, 'validation_failed')
-    json_filename_filtered = f"filtered_failures_excluding_mismatched_{current_time}.json"
+    json_filename_filtered = f"{output_dir}/filtered_failures_excluding_mismatched_{current_time}.json"
     with open(json_filename_filtered, 'w', encoding='utf-8') as f:
         json.dump(fails_filtered, f, ensure_ascii=False, indent=4)
     print(f"Filtered failure analysis (excluding mismatched periods) saved to: {json_filename_filtered}")
